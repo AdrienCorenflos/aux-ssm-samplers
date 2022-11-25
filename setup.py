@@ -22,6 +22,7 @@ setuptools.setup(
     install_requires=[
         "jax>=0.3.25",
         "jaxlib>=0.3.25",
+        "jaxtyping>=0.2.8",
     ],
     long_description_content_type="text/markdown",
     keywords="probabilistic state space bayesian statistics sampling algorithms",
