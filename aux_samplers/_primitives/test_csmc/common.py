@@ -1,7 +1,10 @@
+from dataclasses import field
+
 import chex
 import jax
-from jax.scipy.stats import norm
 import jax.numpy as jnp
+from jax.scipy.stats import norm
+
 from aux_samplers._primitives.csmc.base import Dynamics, Distribution, UnivariatePotential, Potential
 
 
@@ -11,16 +14,18 @@ class GaussianDynamics(Dynamics):
     AR dynamics with Gaussian noise.
     """
     rho: float = 0.9
+    sig: float = field(init=False)
+
+    def __post_init__(self):
+        self.sig = (1 - self.rho ** 2) ** 0.5
 
     def logpdf(self, x_t_p_1, x_t, _params):
         x_pred = self.rho * x_t
-        sig = (1 - self.rho ** 2) ** 0.5
-        return norm.logpdf(x_t_p_1, x_pred, sig).ravel()
+        return norm.logpdf(x_t_p_1, x_pred, self.sig).ravel()
 
     def sample(self, key, x_t, params):
         x_pred = self.rho * x_t
-        sig = (1 - self.rho ** 2) ** 0.5
-        return x_pred + sig * jax.random.normal(key, x_t.shape)
+        return x_pred + self.sig * jax.random.normal(key, x_t.shape)
 
 
 @chex.dataclass
@@ -33,6 +38,9 @@ class GaussianDistribution(Distribution):
 
     def sample(self, key, N):
         return self.mu + self.sig * jax.random.normal(key, (N, 1))
+
+    def logpdf(self, x):
+        return norm.logpdf(x, self.mu, self.sig).ravel()
 
 
 @chex.dataclass
