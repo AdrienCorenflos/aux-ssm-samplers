@@ -4,17 +4,10 @@ backward sampling step of Whiteley.
 """
 import jax
 import jax.numpy as jnp
-from chex import ArrayTree, dataclass, Array
 from jax.tree_util import tree_map
 
-from .base import Distribution, Potential, UnivariatePotential, Dynamics, normalize
+from .base import Distribution, Potential, UnivariatePotential, Dynamics, normalize, CSMCState
 from .resamplings import multinomial
-
-
-@dataclass
-class CSMCState:
-    x: ArrayTree
-    ancestors: Array
 
 
 def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int,
@@ -104,7 +97,9 @@ def _csmc(key, x_star, M0, G0, Mt, Gt, N):
 
 
 def _backward_scanning_pass(key, w_T, xs, As):
-    B_T = jax.random.choice(key, w_T.shape[0], p=w_T, shape=())
+    T = xs.shape[0]
+    keys = jax.random.split(key, T)
+    B_T = jax.random.choice(keys[0], w_T.shape[0], p=w_T, shape=())
     x_T = xs[-1, B_T]
 
     def body(B_t, inp):
@@ -135,7 +130,7 @@ def _backward_sampling_pass(key, Mt: Dynamics, w_T, xs, log_ws):
         x_t_m_1 = xs_t_m_1[B_t_m_1]
         return x_t_m_1, (x_t_m_1, B_t_m_1)
 
-    Mt_params = tree_map(lambda x: x[:0:-1], Mt.params)
+    Mt_params = tree_map(lambda x: x[::-1], Mt.params)
 
     # xs[-2::-1] is the reversed list of xs[:-1], I know, not readable... Same for log_ws[:-1].
     inps = keys[1:], xs[-2::-1], log_ws[-2::-1], Mt_params

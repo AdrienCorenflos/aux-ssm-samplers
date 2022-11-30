@@ -4,7 +4,7 @@ from typing import Optional
 
 import chex
 import jax.numpy as jnp
-from chex import ArrayTree
+from chex import ArrayTree, dataclass, Array
 
 _MSG = """
 The logpdf is not implemented for this {type(self).__name__} but was called.
@@ -18,7 +18,6 @@ class UnivariatePotential(abc.ABC):
     """
     Abstract class for univariate potential functions.
     """
-    params: Optional[ArrayTree] = None
 
     def logpdf(self, x):
         raise NotImplementedError
@@ -76,3 +75,9 @@ def normalize(log_weights):
     weights /= jnp.sum(weights)
 
     return weights
+
+
+@dataclass
+class CSMCState:
+    x: ArrayTree
+    ancestors: Array

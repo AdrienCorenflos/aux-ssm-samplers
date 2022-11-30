@@ -4,18 +4,10 @@ Similar to them, we only implement the multinomial resampling scheme and do not 
 """
 import jax
 import jax.numpy as jnp
-from chex import ArrayTree, dataclass, Array
-from jax.tree_util import tree_map
 
-from .base import Distribution, Potential, UnivariatePotential, Dynamics, normalize
+from .base import Distribution, Potential, UnivariatePotential, Dynamics, normalize, CSMCState
 from .resamplings import multinomial
-from .standard import _backward_scanning_pass
-
-
-@dataclass
-class CSMCState:
-    x: ArrayTree
-    ancestors: Array
+from .standard import _backward_scanning_pass, _backward_sampling_pass
 
 
 def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int,
@@ -66,7 +58,7 @@ def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Pote
 
 def _csmc(key, x_star, M0, G0, Mt, Gt, N, delta):
     T, d = x_star.shape
-    keys = jax.random.split(key, T+1)
+    keys = jax.random.split(key, T + 1)
 
     # Sample proposal particles
     sqrt_half_delta = jnp.sqrt(0.5 * delta)
@@ -96,28 +88,3 @@ def _csmc(key, x_star, M0, G0, Mt, Gt, N, delta):
     w_T, (log_ws, As) = jax.lax.scan(body, w0, inps)
     log_ws = jnp.insert(log_ws, 0, log_w0, axis=0)
     return w_T, prop_xs, log_ws, As
-
-
-def _backward_sampling_pass(key, Mt: Dynamics, w_T, xs, log_ws):
-    T = xs.shape[0]
-    keys = jax.random.split(key, T)
-
-    B_T = jax.random.choice(keys[0], w_T.shape[0], p=w_T, shape=())
-    x_T = xs[-1, B_T]
-
-    def body(x_t, inp):
-        op_key, xs_t_m_1, log_w_t_m_1, Mt_m_1_params = inp
-        log_w = Mt.logpdf(x_t, xs_t_m_1, Mt_m_1_params) + log_w_t_m_1
-        w = normalize(log_w)
-        B_t_m_1 = jax.random.choice(op_key, w.shape[0], p=w, shape=())
-        x_t_m_1 = xs_t_m_1[B_t_m_1]
-        return x_t_m_1, (x_t_m_1, B_t_m_1)
-
-    Mt_params = tree_map(lambda x: x[:0:-1], Mt.params)
-
-    # xs[-2::-1] is the reversed list of xs[:-1], I know, not readable... Same for log_ws[:-1].
-    inps = keys[1:], xs[-2::-1], log_ws[-2::-1], Mt_params
-    _, (xs, Bs) = jax.lax.scan(body, x_T, inps)
-    xs = jnp.insert(xs, 0, x_T, axis=0)
-    Bs = jnp.insert(Bs, 0, B_T, axis=0)
-    return xs[::-1], Bs[::-1]
