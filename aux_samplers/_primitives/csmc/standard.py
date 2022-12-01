@@ -2,16 +2,18 @@
 Implements the classical cSMC kernel from the seminal pMCMC paper by Andrieu et al. (2010). We also implement the
 backward sampling step of Whiteley.
 """
+from typing import Optional
+
 import jax
 import jax.numpy as jnp
 from jax.tree_util import tree_map
 
-from .base import Distribution, Potential, UnivariatePotential, Dynamics, normalize, CSMCState
-from .resamplings import multinomial
+from .base import Distribution, Potential, UnivariatePotential, Dynamics, CSMCState
+from .resamplings import multinomial, normalize
 
 
 def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int,
-               backward=False):
+               backward: bool = False, Pt: Optional[Dynamics] = None):
     """
     Get a cSMC kernel.
 
@@ -29,7 +31,8 @@ def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Pote
         Total number of particles to use in the cSMC sampler.
     backward: bool
         Whether to perform backward sampling or not. If True, the dynamics must implement a valid logpdf method.
-
+    Pt:
+        Dynamics of the true model. If None, it is assumed to be the same as Mt.
     Returns:
     --------
     kernel: Callable
@@ -38,13 +41,18 @@ def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Pote
         Function to initialize the state of the sampler given a trajectory.
     """
 
+    if backward and Pt is None:
+        Pt = Mt
+    elif backward and not hasattr(Pt, "logpdf"):
+        raise ValueError("When `backward` is True, `Pt` must implement a valid logpdf method.")
+
     def kernel(key, state):
         key_fwd, key_bwd = jax.random.split(key)
         w_T, xs, log_ws, As = _csmc(key_fwd, state.x, M0, G0, Mt, Gt, N)
         if not backward:
             x, ancestors = _backward_scanning_pass(key_bwd, w_T, xs, As)
         else:
-            x, ancestors = _backward_sampling_pass(key_bwd, Mt, w_T, xs, log_ws)
+            x, ancestors = _backward_sampling_pass(key_bwd, Pt, w_T, xs, log_ws)
         return CSMCState(x=x, ancestors=ancestors)
 
     def init(x_star):
@@ -65,7 +73,7 @@ def _csmc(key, x_star, M0, G0, Mt, Gt, N):
     x0 = x0.at[0].set(x_star[0])
 
     # Compute initial weights and normalize
-    log_w0 = G0.logpdf(x0)
+    log_w0 = G0(x0)
     w0 = normalize(log_w0)
 
     def body(carry, inp):
@@ -81,7 +89,7 @@ def _csmc(key, x_star, M0, G0, Mt, Gt, N):
         x_t = x_t.at[0].set(x_star_t)
 
         # Compute weights
-        log_w_t = Gt.logpdf(x_t, x_t_m_1, Gt_params)
+        log_w_t = Gt(x_t, x_t_m_1, Gt_params)
         w_t = normalize(log_w_t)
         # Return next step
         next_carry = (w_t, x_t)

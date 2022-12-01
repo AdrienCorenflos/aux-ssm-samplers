@@ -6,6 +6,7 @@ It could easily be extended to include other algorithms.
 import jax
 import jax.numpy as jnp
 from chex import PRNGKey
+from jax import numpy as jnp
 from jaxtyping import Array, Float, Int, PyTree
 
 
@@ -78,3 +79,23 @@ def coupled_multinomial(
 
     coupled = coupled.at[0].set(True)
     return indices_1, indices_2, coupled
+
+
+def normalize(log_weights):
+    """
+    Normalize log weights to obtain unnormalized weights.
+
+    Parameters
+    ----------
+    log_weights : Array
+        Log weights.
+
+    Returns
+    -------
+    weights : Array
+        Unnormalized weights.
+    """
+    weights = jnp.exp(log_weights - jnp.max(log_weights))
+    weights /= jnp.sum(weights)
+
+    return weights
