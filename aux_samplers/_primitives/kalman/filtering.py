@@ -7,7 +7,7 @@ from jax.scipy.linalg import solve, cho_solve
 from jax.tree_util import tree_map
 
 from .base import LGSSM
-from ..base import mvn_loglikelihood
+from ..math.logpdf import mvn_loglikelihood
 
 
 def filtering(ys, lgssm: LGSSM, parallel: bool) -> Tuple[Array, Array, Numeric]:

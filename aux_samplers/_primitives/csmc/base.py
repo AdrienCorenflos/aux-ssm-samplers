@@ -17,12 +17,20 @@ class CSMCState:
     ancestors: Array
 
 
+@dataclass
+class CoupledCSMCState:
+    state_1: CSMCState
+    state_2: CSMCState
+    coupled_flags: Array
+
+
 @chex.dataclass
 class UnivariatePotential(abc.ABC):
     """
     Abstract class for univariate potential functions.
     This is just a callable, but may have parameters.
     """
+
     def __call__(self, x):
         raise NotImplementedError
 
