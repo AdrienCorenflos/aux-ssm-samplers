@@ -58,6 +58,10 @@ def coupled_multinomial(
     coupled_flag:
         Flag indicating whether the coupling was successful or not.
     """
-    return index_max_coupling(key, weights_1, weights_2)
+    idx_1, idx_2, coupled = index_max_coupling(key, weights_1, weights_2)
 
+    idx_1 = idx_1.at[0].set(0)
+    idx_2 = idx_2.at[0].set(0)
+    coupled = coupled.at[0].set(True)
+    return idx_1, idx_2, coupled
 
