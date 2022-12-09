@@ -129,7 +129,7 @@ def _combine_elements(elems, n_elems, elems_indices):
 
 
 def make_dnc_tree(ms: Array, Ps: Array, lgssm: LGSSM):
-    *_, Fs, Qs, bs, _, _, _, _ = lgssm
+    *_, Fs, Qs, bs, _, _, _ = lgssm
     T = len(ms) - 1
 
     # Initialise the reverse conditional distributions parameters
