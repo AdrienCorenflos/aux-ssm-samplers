@@ -3,7 +3,7 @@ import jax
 import jax.numpy as jnp
 from jax.scipy.linalg import solve_triangular
 
-from .logpdf import mvn_loglikelihood
+from .mvn import logpdf
 
 _EPS = 0.01  # this is a small float to make sure that log2(2**k) = k exactly
 
@@ -73,8 +73,8 @@ def _thorisson_mvn_coupling(k, m1, L1, m2, L2, C=1.):
     p = lambda k_: m1 + L1 @ jax.random.normal(k_, m1.shape)
     q = lambda k_: m2 + L2 @ jax.random.normal(k_, m2.shape)
 
-    log_p = lambda x: mvn_loglikelihood(x, m1, L1)
-    log_q = lambda x: mvn_loglikelihood(x, m2, L2)
+    log_p = lambda x: logpdf(x, m1, L1)
+    log_q = lambda x: logpdf(x, m2, L2)
 
     return thorisson(k, p, q, log_p, log_q, C)
 
@@ -124,8 +124,8 @@ def _modified_lindvall_roger(k, m1, L1, m2, L2):
     log_v = jnp.log(jax.random.uniform(k3))
 
     def if_true():
-        flag_1 = log_u < mvn_loglikelihood(x_1, m2, L2) - mvn_loglikelihood(x_1, m1, L1)
-        flag_2 = log_u < mvn_loglikelihood(x_2, m1, L1) - mvn_loglikelihood(x_2, m2, L2)
+        flag_1 = log_u < logpdf(x_1, m2, L2) - logpdf(x_1, m1, L1)
+        flag_2 = log_u < logpdf(x_2, m1, L1) - logpdf(x_2, m2, L2)
         z_1 = jax.lax.select(flag_1, y, x_1)
         z_2 = jax.lax.select(flag_2, y, x_2)
         return z_1, z_2, flag_1 & flag_2, 1
@@ -133,5 +133,5 @@ def _modified_lindvall_roger(k, m1, L1, m2, L2):
     def if_false():
         return x_1, x_2, False, 1
 
-    cond = log_v < mvn_loglikelihood(y, m2, L2) - mvn_loglikelihood(y, m1, L1)
+    cond = log_v < logpdf(y, m2, L2) - logpdf(y, m1, L1)
     return jax.lax.cond(cond, if_true, if_false)

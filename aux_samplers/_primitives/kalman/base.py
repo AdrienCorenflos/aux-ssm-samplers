@@ -1,22 +1,27 @@
-from chex import dataclass
-from jaxtyping import Array, Float
+from typing import NamedTuple
+
+import jax
+import jax.numpy as jnp
+from chex import Numeric
+from ..base import Array
+
+from ..math import logpdf
 
 
-@dataclass(frozen=True)
-class LGSSM:
+class LGSSM(NamedTuple):
     # initial state
-    m0: Float[Array, "dim_x"]
-    P0: Float[Array, "dim_x dim_x"]
+    m0: Array
+    P0: Array
 
     # dynamics
-    Fs: Float[Array, "b-1 dim_x dim_x"]
-    Qs: Float[Array, "b-1 dim_x dim_x"]
-    bs: Float[Array, "b-1 dim_x"]
+    Fs: Array
+    Qs: Array
+    bs: Array
 
     # emission
-    Hs: Float[Array, "b dim_y dim_x"]
-    Rs: Float[Array, "b dim_y dim_y"]
-    cs: Float[Array, "b dim_y"]
+    Hs: Array
+    Rs: Array
+    cs: Array
 
     """
     NamedTuple encapsulating the parameters of the LGSSM.
@@ -40,3 +45,89 @@ class LGSSM:
     cs : Array
         The observation offsets.
     """
+
+
+@jax.jit
+def posterior_logpdf(ys: Array, xs: Array, ell: Numeric, lgssm: LGSSM) -> Numeric:
+    """
+    Computes the posterior log-likelihood :math:`p(x_{0:T} \mid y_{0:T})`
+    of a trajectory of a linear Gaussian state space model.
+
+    Parameters
+    ----------
+    ys : Array
+        The data.
+    xs : Array
+        The trajectory considered for the linear Gaussian state space model.
+    ell : Numeric
+        The marginal log-likelihood :math:`p(y_{1:T})` obtained from running a Kalman filter.
+    lgssm : LGSSM
+        The linear Gaussian state space model.
+
+    Returns
+    -------
+    ell: Numeric
+        The posterior logpdf of the trajectory of the linear Gaussian state space model.
+    """
+    out = log_likelihood(ys, xs, lgssm) - ell
+    out += prior_logpdf(xs, lgssm)
+    return out
+
+
+@jax.jit
+def prior_logpdf(xs: Array, lgssm: LGSSM) -> Numeric:
+    """
+    Computes the prior log-likelihood :math:`p(x_{0:T})`
+    of a trajectory of a linear Gaussian state space model.
+
+    Parameters
+    ----------
+    xs : Array
+        The trajectory considered for the linear Gaussian state space model.
+    lgssm : LGSSM
+        The linear Gaussian state space model.
+
+    Returns
+    -------
+    ell: Numeric
+        The prior logpdf of the trajectory of the linear Gaussian state space model.
+    """
+    m0, P0, Fs, Qs, bs, *_ = lgssm
+
+    chol_P0 = jnp.linalg.cholesky(P0)
+    out = jnp.nan_to_num(logpdf(xs[0], m0, chol_P0))
+
+    chol_Qs = jnp.linalg.cholesky(Qs)
+    pred_xs = jnp.einsum("...ij,...j->...i", Fs, xs[:-1]) + bs
+
+    trans_log_liks = logpdf(xs[1:], pred_xs, chol_Qs)
+    out += jnp.nansum(trans_log_liks)
+    return out
+
+
+@jax.jit
+def log_likelihood(ys: Array, xs: Array, lgssm: LGSSM) -> Numeric:
+    """
+    Computes the log-likelihood :math:`p(y_{0:T} | x_{0:T})`
+    of a set of observations under a given trajectory of a linear Gaussian state space model.
+
+    Parameters
+    ----------
+    ys : Array
+        The data.
+    xs : Array
+        The trajectory considered for the linear Gaussian state space model.
+    lgssm : LGSSM
+        The linear Gaussian state space model.
+
+    Returns
+    -------
+    ell: Numeric
+        The log likelihood of the observations for a trajectory.
+    """
+    *_, Hs, Rs, cs = lgssm
+
+    chol_Rs = jnp.linalg.cholesky(Rs)
+    pred_ys = jnp.einsum("...ij,...j->...i", Hs, xs) + cs
+    out = logpdf(ys, pred_ys, chol_Rs)
+    return jnp.nansum(out)

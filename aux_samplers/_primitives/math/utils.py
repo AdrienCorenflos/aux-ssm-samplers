@@ -38,3 +38,4 @@ def normalize(log_weights):
     weights /= jnp.sum(weights)
 
     return weights
+

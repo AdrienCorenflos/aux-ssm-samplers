@@ -1,18 +1,16 @@
 import math
 from functools import partial
 
-import numpy
-import numpy as np
-import scipy
+import jax
+from chex import PRNGKey
 from jax import numpy as jnp
-from jax._src.scipy.linalg import solve_triangular
+from jax.scipy.linalg import solve_triangular
 from jaxtyping import Float, Array
-from scipy.stats import multivariate_normal
 
 
 @partial(jnp.vectorize, signature="(n),(n),(n,n)->()")
-def mvn_loglikelihood(
-        x: Float[Array, "dim"], mean: Float[Array, "dim"], chol_cov: Float[Array, "dim dim"]
+def logpdf(
+        x: Float[Array, "dim"], m: Float[Array, "dim"], chol: Float[Array, "dim dim"]
 ) -> Float[Array, ""]:
     """
     Computes the log-likelihood of a multivariate normal distribution.
@@ -21,9 +19,9 @@ def mvn_loglikelihood(
     ----------
     x : Array
         The data to compute the log-likelihood for.
-    mean : Array
+    m : Array
         The mean of the multivariate normal distribution.
-    chol_cov : Array
+    chol : Array
         The Cholesky decomposition of the covariance matrix of
         the multivariate normal distribution.
 
@@ -37,18 +35,34 @@ def mvn_loglikelihood(
     >>> import numpy as np
     >>> from scipy.stats import multivariate_normal
     >>> z = jnp.array([1, 2, 3])
-    >>> m = jnp.array([2, 3, 4])
-    >>> chol = jnp.array([[1, 0, 0], [0.2, 1.3, 0], [0.123, -0.5, 1.7]])
-    >>> np.allclose(mvn_loglikelihood(z, m, chol), multivariate_normal.logpdf(z, m, chol @ chol.T))
+    >>> mu = jnp.array([2, 3, 4])
+    >>> L = jnp.array([[1, 0, 0], [0.2, 1.3, 0], [0.123, -0.5, 1.7]])
+    >>> np.allclose(logpdf(z, mu, L), multivariate_normal.logpdf(z, mu, L @ L.T))
     True
     """
 
     dim = x.shape[0]
 
-    y = solve_triangular(chol_cov, x - mean, lower=True)
+    y = solve_triangular(chol, x - m, lower=True)
 
-    diag = jnp.abs(jnp.diag(chol_cov))
+    diag = jnp.abs(jnp.diag(chol))
     normalizing_constant = jnp.sum(jnp.log(diag)) + 0.5 * dim * math.log(2 * math.pi)
     norm_y = jnp.sum(y * y)
 
     return -0.5 * norm_y - normalizing_constant
+
+
+def rvs(key: PRNGKey, m: Float[Array, "dim"], chol: Float[Array, "dim dim"]) -> Float[Array, "dim"]:
+    """
+    Samples from the multivariate normal distribution.
+
+    Parameters
+    ----------
+    key: PRNGKey
+        Random number generator key.
+    m: Array
+        Mean of the multivariate normal distribution.
+    chol: Array
+        Cholesky decomposition of the covariance matrix of the multivariate normal distribution.
+    """
+    return m + chol @ jax.random.normal(key, shape=m.shape)

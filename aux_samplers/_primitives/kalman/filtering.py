@@ -1,16 +1,17 @@
-from typing import Tuple, Callable
+from typing import Tuple
 
 import jax
 import jax.numpy as jnp
-from chex import Numeric, Array
+from chex import Numeric
 from jax.scipy.linalg import solve, cho_solve
 from jax.tree_util import tree_map
 
 from .base import LGSSM
-from ..math.logpdf import mvn_loglikelihood
+from ..base import Array
+from ..math.mvn import logpdf
 
 
-def filtering(ys, lgssm: LGSSM, parallel: bool) -> Tuple[Array, Array, Numeric]:
+def filtering(ys: Array, lgssm: LGSSM, parallel: bool) -> Tuple[Array, Array, Numeric]:
     """ Kalman filtering algorithm.
     Parameters
     ----------
@@ -29,7 +30,7 @@ def filtering(ys, lgssm: LGSSM, parallel: bool) -> Tuple[Array, Array, Numeric]:
     ell : Numeric
         Log-likelihood of the observations.
     """
-    m0, P0, Fs, Qs, bs, Hs, Rs, cs, _ = lgssm
+    m0, P0, Fs, Qs, bs, Hs, Rs, cs = lgssm
 
     if parallel:
         return _parallel_filtering(m0, P0, ys, Fs, Qs, bs, Hs, Rs, cs)  # noqa: bad static type checking
@@ -88,7 +89,7 @@ def sequential_update_one(y, m, P, H, c, R):
     S = R + H @ P @ H.T
 
     chol_S = jnp.linalg.cholesky(S)
-    ell_inc = mvn_loglikelihood(y, y_hat, chol_S)
+    ell_inc = logpdf(y, y_hat, chol_S)
     G = cho_solve((chol_S, True), H @ P).T
     m = m + G @ y_diff
     P = P - G @ S @ G.T
