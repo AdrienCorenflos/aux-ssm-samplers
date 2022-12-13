@@ -4,6 +4,7 @@ import numpy.testing as npt
 import pytest
 import jax.numpy as jnp
 
+from .common import explicit_kalman_smoothing
 from ..kalman.base import LGSSM
 from ..kalman.dnc_sampling import sampling as dnc_sampling
 from ..kalman.filtering import filtering
@@ -65,23 +66,3 @@ def test_parallel_vs_sequential(seed, T, dx, dy, mode):
     npt.assert_allclose(expected_Ps, covs, atol=1e-2, rtol=1e-2)
 
 
-def explicit_kalman_smoothing(ms, Ps, Fs, Qs, bs):
-    """ Explicit Kalman smoother implementation for testing purposes.
-    """
-    T, _ = ms.shape
-    ms_smoothed = np.zeros_like(ms)
-    Ps_smoothed = np.zeros_like(Ps)
-    ms_smoothed[-1] = ms[-1]
-    Ps_smoothed[-1] = Ps[-1]
-    for t in range(T - 2, -1, -1):
-        m, P, F, Q, b = ms[t], Ps[t], Fs[t], Qs[t], bs[t]
-        m_next = ms_smoothed[t + 1]
-        P_next = Ps_smoothed[t + 1]
-
-        P_pred = F @ P @ F.T + Q
-        m_pred = F @ m + b
-
-        K = P @ F.T @ np.linalg.inv(P_pred)
-        ms_smoothed[t] = m + K @ (m_next - m_pred)
-        Ps_smoothed[t] = P + K @ (P_next - P_pred) @ K.T
-    return ms_smoothed, Ps_smoothed
