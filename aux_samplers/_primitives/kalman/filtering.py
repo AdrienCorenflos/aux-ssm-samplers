@@ -20,7 +20,7 @@ def filtering(ys: Array, lgssm: LGSSM, parallel: bool) -> Tuple[Array, Array, Nu
     lgssm: LGSSM
         LGSSM parameters.
     parallel : bool
-        Whether to run the parallel-in-time version or not.
+        Whether to run the _parallel-in-time version or not.
     Returns
     -------
     ms : Array
@@ -109,7 +109,7 @@ def sequential_predict_update(m, P, F, b, Q, y, H, c, R):
     return m, P, ell_inc
 
 
-# Associative operator for the parallel filter
+# Associative operator for the _parallel filter
 
 def _filtering_op(elem1, elem2):
     A1, b1, C1, eta1, J1 = elem1
@@ -132,7 +132,7 @@ def _filtering_op(elem1, elem2):
     return A, b, 0.5 * (C + C.T), eta, 0.5 * (J + J.T)
 
 
-# Initialization of the parallel filter
+# Initialization of the _parallel filter
 
 def _filtering_init(Fs, Qs, bs, Hs, Rs, cs, m0, P0, ys):
     T = bs.shape[0]

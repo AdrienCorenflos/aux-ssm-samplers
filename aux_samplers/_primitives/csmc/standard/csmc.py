@@ -9,9 +9,9 @@ from typing import Optional
 import jax
 from jax import numpy as jnp, tree_map
 
-from aux_samplers._primitives.csmc.base import Distribution, UnivariatePotential, Dynamics, Potential, CSMCState
-from aux_samplers._primitives.csmc.resamplings import multinomial
-from aux_samplers._primitives.math.utils import normalize
+from ..base import Distribution, UnivariatePotential, Dynamics, Potential, CSMCState
+from ..resamplings import multinomial
+from ...math.utils import normalize
 
 
 def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int,

@@ -3,6 +3,7 @@ Implementation of conditional resampling algorithms.
 At the moment it only has conditional multinomial resampling as this is not the topic of the paper.
 It could easily be extended to include other algorithms.
 """
+from typing import Optional
 
 import jax
 from chex import PRNGKey
@@ -11,7 +12,7 @@ from jaxtyping import Array, Float, Int, PyTree
 from aux_samplers._primitives.math.generic_couplings import index_max_coupling
 
 
-def multinomial(key: PRNGKey, weights: Float[Array, "dim_x"]) -> Int[Array, "dim_x"]:
+def multinomial(key: PRNGKey, weights: Float[Array, "dim_x"], N: Optional[int] = None) -> Int[Array, "dim_x"]:
     """
     Conditional multinomial resampling. The weights are assumed to be normalised already.
     The index 0 is always left unchanged.
@@ -22,13 +23,17 @@ def multinomial(key: PRNGKey, weights: Float[Array, "dim_x"]) -> Int[Array, "dim
         Random number generator key.
     weights:
         Weights of the particles.
-
+    N:
+        Number of particles to resample.
     Returns
     -------
     indices:
         Indices of the resampled particles.
     """
-    indices = jax.random.choice(key, weights.shape[0], p=weights, shape=weights.shape, replace=True)
+    M = weights.shape[0]
+    N = M if N is None else N
+
+    indices = jax.random.choice(key, M, p=weights, shape=(N,), replace=True)
     indices = indices.at[0].set(0)
     return indices
 
@@ -64,4 +69,3 @@ def coupled_multinomial(
     idx_2 = idx_2.at[0].set(0)
     coupled = coupled.at[0].set(True)
     return idx_1, idx_2, coupled
-

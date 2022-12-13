@@ -21,7 +21,7 @@ def sampling(key: PRNGKey, ms: Array, Ps: Array, lgssm: LGSSM, parallel: bool) -
     lgssm: LGSSM
         LGSSM model to be sampled from.
     parallel: bool
-        Whether to run the sampling in parallel.
+        Whether to run the sampling in _parallel.
     """
     Fs, Qs, bs = lgssm.Fs, lgssm.Qs, lgssm.bs
     gains, increments = _sampling_init(key, ms, Ps, Fs, Qs, bs)  # noqa: bad static type checking

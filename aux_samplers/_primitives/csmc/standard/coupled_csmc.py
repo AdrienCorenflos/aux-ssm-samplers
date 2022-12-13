@@ -7,14 +7,15 @@ from typing import Optional
 import jax
 from jax import numpy as jnp, tree_map
 
-from aux_samplers._primitives.csmc.base import Distribution, UnivariatePotential, Dynamics, Potential, CSMCState, \
-    CoupledCSMCState
+from aux_samplers._primitives.csmc.base import UnivariatePotential, Dynamics, Potential, CSMCState, \
+    CoupledCSMCState, CoupledDistribution, CoupledDynamics
 from aux_samplers._primitives.csmc.resamplings import coupled_multinomial
-from aux_samplers._primitives.math.utils import normalize
 from aux_samplers._primitives.math.generic_couplings import index_max_coupling
+from aux_samplers._primitives.math.utils import normalize
 
 
-def get_coupled_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int,
+def get_coupled_kernel(cM0: CoupledDistribution, G0_1: UnivariatePotential, G0_2: UnivariatePotential,
+                       cMt: CoupledDynamics, Gt_1: Potential, Gt_2: Potential, N: int,
                        backward: bool = False, Pt: Optional[Dynamics] = None):
     """
     Get a coupled cSMC kernel.
@@ -44,20 +45,20 @@ def get_coupled_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, 
     """
 
     if backward and Pt is None:
-        Pt = Mt
-    elif backward and not hasattr(Pt, "logpdf"):
-        raise ValueError("When `backward` is True, `Pt` must implement a valid logpdf method.")
+        raise ValueError("If `backward` is True, `Pt` must be specified.")
 
     def kernel(key, coupled_state):
         key_fwd, key_bwd = jax.random.split(key)
-        state_1, state_2, coupled_flags = coupled_state
+        state_1, state_2, coupled_flags = coupled_state.state_1, coupled_state.state_2, coupled_state.coupled_flags
         w_1_T, xs_1, log_ws_1, As_1, w_2_T, xs_2, log_ws_2, As_2, coupled_flags = _ccsmc(key_fwd,
-                                                                                         state_1,
-                                                                                         state_2,
+                                                                                         state_1.x,
+                                                                                         state_2.x,
                                                                                          coupled_flags,
-                                                                                         M0, G0, Mt, Gt, N)
+                                                                                         cM0, G0_1, G0_2,
+                                                                                         cMt, Gt_1, Gt_2,
+                                                                                         N)
         if not backward:
-            x_1, ancestors_1, x_2, ancestors_1, coupled_flags = _coupled_backward_scanning_pass(key_bwd, w_1_T, w_2_T,
+            x_1, ancestors_1, x_2, ancestors_2, coupled_flags = _coupled_backward_scanning_pass(key_bwd, w_1_T, w_2_T,
                                                                                                 xs_1, xs_2, As_1, As_2,
                                                                                                 coupled_flags)
         else:
@@ -71,35 +72,38 @@ def get_coupled_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, 
         coupled_state = CoupledCSMCState(state_1=state_1, state_2=state_2, coupled_flags=coupled_flags)
         return coupled_state
 
-    def init(x_star):
-        T, *_ = x_star.shape
+    def init(x_star_1, x_star_2):
+        T, *_ = x_star_1.shape
         ancestors = jnp.zeros((T,), dtype=jnp.int_)
-        return CSMCState(x=x_star, ancestors=ancestors)
+        state_1 = CSMCState(x=x_star_1, ancestors=ancestors)
+        state_2 = CSMCState(x=x_star_2, ancestors=ancestors)
+        coupled_state = CoupledCSMCState(state_1=state_1, state_2=state_2,
+                                         coupled_flags=jnp.zeros((T,), dtype=jnp.bool_))
+        return coupled_state
 
     return init, kernel
 
 
-def _ccsmc(key, x_star_1, x_star_2, coupling_flag, M0, G0, Mt, Gt, N):
+def _ccsmc(key, x_star_1, x_star_2, coupling_flag, cM0, G0_1, G0_2, cMt, Gt_1, Gt_2, N):
     """JAX scan implementation of the coupled version of the cSMC algorithm
      using common random numbers for sampling and index coupled resampling."""
     T, *_ = x_star_1.shape
     keys = jax.random.split(key, T)
 
-    # Sample initial statea
-    x0_1 = x0_2 = M0.sample(keys[0], N)
-    are_coupled_0 = jnp.ones((N,), dtype=jnp.bool_)
+    # Sample initial states
+    x0_1, x0_2, are_coupled_0 = cM0.sample(keys[0], N)
+
     # Replace the first particle with the star trajectory
-    x0_1 = x0_1.at[0].set(x_star_1[0])
-    x0_2 = x0_2.at[0].set(x_star_2[0])
+    x0_1, x0_2 = x0_1.at[0].set(x_star_1[0]), x0_2.at[0].set(x_star_2[0])
     are_coupled_0 = are_coupled_0.at[0].set(coupling_flag[0])
 
     # Compute initial weights and normalize
-    log_w0_1, log_w0_2 = G0(x0_1), G0(x0_2)
+    log_w0_1, log_w0_2 = G0_1(x0_1), G0_2(x0_2)
     w0_1, w0_2 = normalize(log_w0_1), normalize(log_w0_2)
 
     def body(carry, inp):
-        w_1_t_m_1, x_1_t_m_1, w_2_t_m_1, x_2_t_m_1, coupled_t_m_1 = carry
-        Mt_params, Gt_params, x_1_star_t, x_2_star_t, key_t, flag_t = inp
+        w_1_t_m_1, x_1_t_m_1, w_2_t_m_1, x_2_t_m_1 = carry
+        Mt_params, Gt_params, x_1_star_t, x_2_star_t, key_t, flag = inp
         resampling_key, sampling_key = jax.random.split(key_t)
         # Conditional resampling
         A_1_t, A_2_t, coupled_index = coupled_multinomial(resampling_key, w_1_t_m_1, w_2_t_m_1)
@@ -107,31 +111,30 @@ def _ccsmc(key, x_star_1, x_star_2, coupling_flag, M0, G0, Mt, Gt, N):
         x_1_t_m_1 = jnp.take(x_1_t_m_1, A_1_t, axis=0)
         x_2_t_m_1 = jnp.take(x_2_t_m_1, A_2_t, axis=0)
 
-        coupled_t = coupled_t_m_1 & coupled_index
-        coupled_t = coupled_t.at[0].set(flag_t)
-
         # Sample new particles
-        x_1_t = Mt.sample(sampling_key, x_1_t_m_1, Mt_params)
-        x_2_t = Mt.sample(sampling_key, x_2_t_m_1, Mt_params)
+        x_1_t, x_2_t, coupled_t = cMt.sample(sampling_key, x_1_t_m_1, x_2_t_m_1, Mt_params[0], Mt_params[1])
 
         x_1_t = x_1_t.at[0].set(x_1_star_t)
         x_2_t = x_2_t.at[0].set(x_2_star_t)
+        coupled_t = coupled_t.at[0].set(flag)
 
         # Compute weights
-        log_w_1_t = Gt(x_1_t, x_1_t_m_1, Gt_params)
-        log_w_2_t = Gt(x_2_t, x_2_t_m_1, Gt_params)
+        log_w_1_t = Gt_1(x_1_t, x_1_t_m_1, Gt_params[0])
+        log_w_2_t = Gt_2(x_2_t, x_2_t_m_1, Gt_params[1])
 
         # Normalize weights
         w_1_t, w_2_t = normalize(log_w_1_t), normalize(log_w_2_t)
 
         # Return next step
-        next_carry = (w_1_t, x_1_t, w_2_t, x_2_t, coupled_t)
+        next_carry = (w_1_t, x_1_t, w_2_t, x_2_t)
         save = (x_1_t, log_w_1_t, A_1_t, x_2_t, log_w_2_t, A_2_t, coupled_t)
 
         return next_carry, save
 
-    init = (w0_1, x0_1, w0_2, x0_2, are_coupled_0)
-    inputs = (Mt.params, Gt.params, x_star_1[1:], x_star_2[1:], keys[1:], coupling_flag[1:])
+    init = (w0_1, x0_1, w0_2, x0_2)
+
+    Gt_params_joint = (Gt_1.params, Gt_2.params)
+    inputs = (cMt.params, Gt_params_joint, x_star_1[1:], x_star_2[1:], keys[1:], coupling_flag[1:])
     (w_1_T, _, w_2_T, *_), (xs_1, log_ws_1, As_1, xs_2, log_ws_2, As_2, coupled_flags) = jax.lax.scan(body,
                                                                                                       init,
                                                                                                       inputs)
@@ -140,6 +143,7 @@ def _ccsmc(key, x_star_1, x_star_2, coupling_flag, M0, G0, Mt, Gt, N):
     log_ws_2 = jnp.insert(log_ws_2, 0, log_w0_2, axis=0)
     xs_1 = jnp.insert(xs_1, 0, x0_1, axis=0)
     xs_2 = jnp.insert(xs_2, 0, x0_2, axis=0)
+    coupled_flags = jnp.insert(coupled_flags, 0, are_coupled_0, axis=0)
     return w_1_T, xs_1, log_ws_1, As_1, w_2_T, xs_2, log_ws_2, As_2, coupled_flags
 
 

@@ -132,54 +132,6 @@ def coupled_sampler(key: jnp.ndarray,
     return X, Y, is_coupled, n_trials
 
 
-# def index_max_coupling(key, log_W_X, log_W_Y):
-#     """
-#     Maximum coupling of multinomials.
-#     Parameters
-#     ----------
-#     key
-#     log_W_X, log_W_Y
-#     Returns
-#     -------
-#     I: int
-#         Chosen index for X
-#     J: int
-#         Chosen index for Y
-#     is_coupled:
-#         Do we have I = J
-#     """
-#     N = log_W_X.shape[0]
-#
-#     key_1, key_2 = jax.random.split(key)
-#     # compute the overlap
-#     log_nu = jnp.minimum(log_W_X, log_W_Y)
-#     log_alpha = logsumexp(log_nu)
-#
-#     # sample to know if we are coupled
-#     log_u = jnp.log(jax.random.uniform(key_1))
-#     is_coupled = log_u < log_alpha
-#
-#     # sample
-#     def if_coupled(k):
-#         nu = jnp.exp(log_nu - log_alpha)
-#         idx_X = idx_Y = jax.random.choice(k, N, p=nu)
-#         return idx_X, idx_Y
-#
-#     def otherwise(k):
-#         # compute the residuals
-#         log_1_minus_alpha = log1mexp(log_alpha)
-#         log_r_1 = logsubexp(log_W_X, log_nu) - log_1_minus_alpha
-#         log_r_2 = logsubexp(log_W_Y, log_nu) - log_1_minus_alpha
-#
-#         # Note that the fact the same key is used does not matter here as we are sampling from
-#         # the uncoupled bit, so we don't care.
-#         idx_X = jax.random.choice(k, N, p=jnp.exp(log_r_1))
-#         idx_Y = jax.random.choice(k, N, p=jnp.exp(log_r_2))
-#
-#         return idx_X, idx_Y
-#
-#     I, J = jax.lax.cond(is_coupled, if_coupled, otherwise, key_2)
-#     return I, J, is_coupled
 def index_max_coupling(
         key: PRNGKey, weights_1: Float[Array, "dim_x"], weights_2: Float[Array, "dim_x"], N: Optional[int] = None
 ) -> PyTree[Int[Array, "dim_x"]]:
@@ -208,8 +160,9 @@ def index_max_coupling(
         Flag indicating whether the coupling was successful or not.
     """
     key_1, key_2, key_3 = jax.random.split(key, 3)
-    if N is None:
-        N = weights_1.shape[0]
+
+    M = weights_1.shape[0]
+    N = M if N is None else N
 
     nu = jnp.minimum(weights_1, weights_2)
     alpha = jnp.sum(nu)
@@ -218,16 +171,15 @@ def index_max_coupling(
     nu /= alpha
 
     coupled = jax.random.uniform(key_1, shape=(N,)) < alpha
-    where_coupled = jax.random.choice(key_2, N, p=nu, shape=(N,), replace=True)
+    where_coupled = jax.random.choice(key_2, M, p=nu, shape=(N,), replace=True)
 
-    where_uncoupled_1 = jax.random.choice(key_3, N, p=weights_1, shape=(N,), replace=True)
-    where_uncoupled_2 = jax.random.choice(key_3, N, p=weights_2, shape=(N,), replace=True)
+    where_uncoupled_1 = jax.random.choice(key_3, M, p=weights_1, shape=(N,), replace=True)
+    where_uncoupled_2 = jax.random.choice(key_3, M, p=weights_2, shape=(N,), replace=True)
 
     indices_1 = jnp.where(coupled, where_coupled, where_uncoupled_1)
     indices_2 = jnp.where(coupled, where_coupled, where_uncoupled_2)
 
-    indices_1 = indices_1.at[0].set(0)
-    indices_2 = indices_2.at[0].set(0)
     if N == 1:
-        return indices_1[0], indices_2[0], coupled[0]
+        indices_1, indices_2, coupled = indices_1[0], indices_2[0], coupled[0]
+
     return indices_1, indices_2, coupled

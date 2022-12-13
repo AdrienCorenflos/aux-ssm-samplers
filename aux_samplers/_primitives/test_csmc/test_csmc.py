@@ -10,32 +10,13 @@ from .common import GaussianDistribution, FlatPotential, FlatUnivariatePotential
     GaussianObservationPotential
 
 from statsmodels.graphics.tsaplots import plot_acf
-from ..csmc.auxiliary import get_independent_kernel as get_auxiliary_kernel
-from ..csmc.standard import get_kernel as get_standard_kernel
+
+from ..csmc.base import CRNDistribution, CRNDynamics
+from ..csmc.standard import get_kernel, get_coupled_kernel
 
 
-def get_kernel_fn(method):
-    if method == "standard":
-        get_kernel = get_standard_kernel
-    elif method == "auxiliary":
-        get_kernel = get_auxiliary_kernel
-    else:
-        raise ValueError("Unknown method: {}".format(method))
-    return get_kernel
-
-
-def specialise_kernel(kernel, method, delta):
-    if method == "standard":
-        return kernel
-    else:
-        return partial(kernel, delta=delta)
-
-
-@pytest.mark.parametrize("method", ["standard", "auxiliary"])
 @pytest.mark.parametrize("backward", [True, False])
-@pytest.mark.parametrize("delta", [0.5, 1.5])
-def test_flat_potential(method, backward, delta):
-    get_kernel = get_kernel_fn(method)
+def test_flat_potential(backward):
 
     # Test a flat potential, to check that we recover the prior.
     # The model is a stationary AR process with Gaussian noise.
@@ -54,7 +35,6 @@ def test_flat_potential(method, backward, delta):
     Mt = GaussianDynamics(rho=RHO)
 
     init, kernel = get_kernel(M0, G0, Mt, Gt, N=N, backward=backward, Pt=Mt)
-    kernel = specialise_kernel(kernel, method, delta)
 
     init_key, key = jax.random.split(JAX_KEY)
     x0 = jax.random.normal(init_key, (T, 1))
@@ -69,7 +49,7 @@ def test_flat_potential(method, backward, delta):
     xs = xs[B:, :, 0]
 
     fig, axes = plt.subplots(ncols=2, figsize=(10, 5))
-    fig.suptitle("Method: {}, Backward: {}, Delta: {}".format(method, backward, delta))
+    fig.suptitle("Backward: {}".format(backward))
     plot_acf(xs[:, 0], ax=axes[0])
     axes[0].set_title("ACF of x_0")
     plot_acf(xs[:, T//2], ax=axes[1])
@@ -93,14 +73,10 @@ def test_flat_potential(method, backward, delta):
 
 
 
-@pytest.mark.parametrize("method", ["standard", "auxiliary"])
 @pytest.mark.parametrize("backward", [True, False])
-@pytest.mark.parametrize("delta", [0.5, 1.5])
-def test_lgssm(method, backward, delta):
-    get_kernel = get_kernel_fn(method)
+def test_lgssm(backward):
 
-    # Test a flat potential, to check that we recover the prior.
-    # The model is a stationary AR process with Gaussian noise.
+    # Test a LGSSM model test
     JAX_KEY = jax.random.PRNGKey(0)
 
     T = 25  # T time steps
@@ -120,7 +96,6 @@ def test_lgssm(method, backward, delta):
     Mt = GaussianDynamics(rho=RHO)
 
     init, kernel = get_kernel(M0, G0, Mt, Gt, N=N, backward=backward, Pt=Mt)
-    kernel = specialise_kernel(kernel, method, delta)
 
     x0 = jax.random.normal(init_key, (T, 1))
     init_state = init(x0)
@@ -134,7 +109,7 @@ def test_lgssm(method, backward, delta):
     xs = xs[B:, :, 0]
 
     fig, axes = plt.subplots(ncols=3, figsize=(15, 5))
-    fig.suptitle("Method: {}, Backward: {}, Delta: {}".format(method, backward, delta))
+    fig.suptitle("Backward: {}".format(backward))
     plot_acf(xs[:, 0], ax=axes[0])
     axes[0].set_title("ACF of x_0")
     plot_acf(xs[:, T//2], ax=axes[1])
@@ -145,3 +120,49 @@ def test_lgssm(method, backward, delta):
 
     print(xs.mean(axis=0))
     print(xs.std(axis=0))
+
+
+@pytest.mark.parametrize("backward", [True, False])
+def test_coupled_csmc(backward):
+
+    # The model is a stationary AR process with Gaussian noise.
+    JAX_KEY = jax.random.PRNGKey(0)
+
+    T = 25  # T time steps
+    RHO = 0.9  # correlation
+    SIG_Y = 0.1  # observation noise
+
+    data_key, init_key, key = jax.random.split(JAX_KEY, 3)
+    true_xs, true_ys = lgssm_data(data_key, RHO, SIG_Y, T)
+
+    N = 32  # use N particles in total
+    M = 50_000  # get M - B samples from the particle Gibbs kernel
+    B = M // 10  # Discard the first 10% of the samples
+
+    M0 = GaussianDistribution(mu=0.0, sig=1.0)
+    cM0 = CRNDistribution(dist_1=M0, dist_2=M0)
+    G0 = GaussianDistribution(mu=true_ys[0], sig=SIG_Y)
+    Gt = GaussianObservationPotential(params=true_ys[1:], sig=SIG_Y)
+    Mt = GaussianDynamics(rho=RHO)
+    cMt = CRNDynamics(dynamics_1=Mt, dynamics_2=Mt)
+
+    init, kernel = get_coupled_kernel(cM0, G0, G0, cMt, Gt, Gt, N=N, backward=False, Pt=Mt)
+
+    x0_1, x0_2 = jax.random.normal(init_key, (2, T, 1))
+    init_state = init(x0_1, x0_2)
+
+    def body(state, curr_key):
+        state = kernel(curr_key, state)
+        return state, (state.state_1.x, state.state_2.x)
+
+    _, (xs_1, xs_2) = jax.lax.scan(body, init_state, jax.random.split(key, M))
+
+    xs_1, xs_2 = xs_1[B:, :, 0], xs_2[B:, :, 0]
+
+    print(xs_1.mean(axis=0))
+    print(xs_1.std(axis=0))
+
+    print()
+
+    print(xs_2.mean(axis=0))
+    print(xs_2.std(axis=0))

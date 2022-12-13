@@ -37,7 +37,7 @@ def sampling(key: PRNGKey, ms: Array, Ps: Array, lgssm: LGSSM) -> Array:
 
     warnings.warn(
         "`dnc_sampling.sampling` is a proof-of-concept (and not efficient) feature."
-        "Use mks.kalman.sampling with the argument `parallel=True` instead.",
+        "Use mks.kalman.sampling with the argument `_parallel=True` instead.",
         UserWarning)
 
     key, key_0, key_T = jax.random.split(key, 3)

@@ -43,7 +43,7 @@ def one_shot(key, lgssm_1: LGSSM, lgssm_2: LGSSM, _ms_1, _Ps_1, _ms_2, _Ps_2, pa
     _ms_2
     _Ps_2
     parallel: bool
-        If True, the computations are done parallel in time.
+        If True, the computations are done _parallel in time.
     C: Numeric
         Coupling suboptimality, this controls the variance of the run time.
 
