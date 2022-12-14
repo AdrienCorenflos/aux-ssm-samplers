@@ -107,7 +107,7 @@ def rejection(key: chex.PRNGKey,
 
 def reflection(key, m1, L1, m2, _L2):
     """
-    Pure reflection coupling between two multivariate normal distributions with the same covariance matrix.
+    Reflection maximal coupling between two multivariate normal distributions with the same covariance matrix.
     This will spit out garbage if the covariance matrices are not the same.
 
     Parameters
@@ -259,7 +259,12 @@ def _reflection_maximal(key, N: int, m: jnp.ndarray, mu: jnp.ndarray, chol_Q: jn
         The acceptance flags
     """
     dim = m.shape[0]
-    z = solve_triangular(chol_Q, m - mu, lower=True)
+
+    if jnp.ndim(chol_Q) == 2:
+        z = solve_triangular(chol_Q, m - mu, lower=True)
+    else:
+        z = (m - mu) / chol_Q
+
     e = z / jnp.linalg.norm(z)
 
     normal_key, uniform_key = jax.random.split(key, 2)
@@ -274,8 +279,12 @@ def _reflection_maximal(key, N: int, m: jnp.ndarray, mu: jnp.ndarray, chol_Q: jn
 
     reflected_norm = jnp.where(do_accept[:, None], temp, norm - 2 * jnp.outer(jnp.dot(norm, e), e))
 
-    res_1 = m[None, :] + norm @ chol_Q.T
-    res_2 = mu[None, :] + reflected_norm @ chol_Q.T
+    if jnp.ndim(chol_Q) == 2:
+        res_1 = m[None, :] + norm @ chol_Q.T
+        res_2 = mu[None, :] + reflected_norm @ chol_Q.T
+    else:
+        res_1 = m[None, :] + norm * chol_Q
+        res_2 = mu[None, :] + reflected_norm * chol_Q
     if N == 1:
         return res_1[0], res_2[0], do_accept[0]
     return res_1, res_2, do_accept

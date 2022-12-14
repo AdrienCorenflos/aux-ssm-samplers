@@ -1,8 +1,11 @@
 import abc
 from typing import Optional
-import jax.numpy as jnp
+
 import chex
+import jax.numpy as jnp
 from chex import ArrayTree, dataclass, Array
+
+from aux_samplers._primitives.base import CoupledSamplerState, SamplerState
 
 _MSG = """
 The logpdf is not implemented for this {type(self).__name__} but was called.
@@ -11,17 +14,10 @@ Please implement this function or choose the standard cSMC with no backward pass
 """
 
 
-@dataclass
-class CSMCState:
+@dataclass(init=False)
+class CSMCState(SamplerState):
     x: ArrayTree
     ancestors: Array
-
-
-@dataclass
-class CoupledCSMCState:
-    state_1: CSMCState
-    state_2: CSMCState
-    coupled_flags: Array
 
 
 @chex.dataclass
@@ -109,7 +105,6 @@ class CoupledDynamics(abc.ABC):
 
 @chex.dataclass
 class CRNDistribution(CoupledDistribution):
-
     dist_1: Distribution
     dist_2: Distribution
 
@@ -132,7 +127,6 @@ class CRNDistribution(CoupledDistribution):
 
 @chex.dataclass
 class CRNDynamics(CoupledDynamics):
-
     dynamics_1: Dynamics = None
     dynamics_2: Dynamics = None
 

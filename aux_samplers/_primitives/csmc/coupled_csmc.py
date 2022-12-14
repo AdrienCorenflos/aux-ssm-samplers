@@ -7,11 +7,11 @@ from typing import Optional
 import jax
 from jax import numpy as jnp, tree_map
 
-from aux_samplers._primitives.csmc.base import UnivariatePotential, Dynamics, Potential, CSMCState, \
-    CoupledCSMCState, CoupledDistribution, CoupledDynamics
-from aux_samplers._primitives.csmc.resamplings import coupled_multinomial
-from aux_samplers._primitives.math.couplings import index_max_coupling
-from aux_samplers._primitives.math.utils import normalize
+from .base import UnivariatePotential, Dynamics, Potential, CSMCState, CoupledDistribution, CoupledDynamics
+from .resamplings import coupled_multinomial
+from ..base import CoupledSamplerState
+from ..math.couplings import index_max_coupling
+from ..math.utils import normalize
 
 
 def get_coupled_kernel(cM0: CoupledDistribution, G0_1: UnivariatePotential, G0_2: UnivariatePotential,
@@ -69,7 +69,7 @@ def get_coupled_kernel(cM0: CoupledDistribution, G0_1: UnivariatePotential, G0_2
 
         state_1 = CSMCState(x=x_1, ancestors=ancestors_1)
         state_2 = CSMCState(x=x_2, ancestors=ancestors_2)
-        coupled_state = CoupledCSMCState(state_1=state_1, state_2=state_2, coupled_flags=coupled_flags)
+        coupled_state = CoupledSamplerState(state_1=state_1, state_2=state_2, flags=coupled_flags)
         return coupled_state
 
     def init(x_star_1, x_star_2):
@@ -77,8 +77,7 @@ def get_coupled_kernel(cM0: CoupledDistribution, G0_1: UnivariatePotential, G0_2
         ancestors = jnp.zeros((T,), dtype=jnp.int_)
         state_1 = CSMCState(x=x_star_1, ancestors=ancestors)
         state_2 = CSMCState(x=x_star_2, ancestors=ancestors)
-        coupled_state = CoupledCSMCState(state_1=state_1, state_2=state_2,
-                                         coupled_flags=jnp.zeros((T,), dtype=jnp.bool_))
+        coupled_state = CoupledSamplerState(state_1=state_1, state_2=state_2, flags=jnp.zeros((T,), dtype=jnp.bool_))
         return coupled_state
 
     return init, kernel

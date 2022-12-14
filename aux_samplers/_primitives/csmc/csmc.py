@@ -3,15 +3,14 @@ Implements the classical cSMC kernel from the seminal pMCMC paper by Andrieu et 
 backward sampling step of Whiteley.
 """
 
-
 from typing import Optional
 
 import jax
 from jax import numpy as jnp, tree_map
 
-from ..base import Distribution, UnivariatePotential, Dynamics, Potential, CSMCState
-from ..resamplings import multinomial
-from ...math.utils import normalize
+from .base import Distribution, UnivariatePotential, Dynamics, Potential, CSMCState
+from .resamplings import multinomial
+from ..math.utils import normalize
 
 
 def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int,
