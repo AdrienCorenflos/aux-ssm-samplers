@@ -9,7 +9,7 @@ import jax
 from chex import PRNGKey
 from jaxtyping import Array, Float, Int, PyTree
 
-from aux_samplers._primitives.math.generic_couplings import index_max_coupling
+from aux_samplers._primitives.math.couplings import index_max_coupling
 
 
 def multinomial(key: PRNGKey, weights: Float[Array, "dim_x"], N: Optional[int] = None) -> Int[Array, "dim_x"]:

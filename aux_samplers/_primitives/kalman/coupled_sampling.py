@@ -13,7 +13,7 @@ from .dnc_sampling import make_dnc_tree
 from .filtering import filtering
 from .loglikelihood import lgssm_trajectory_loglikelihood
 from .sampling import sampling, mean_and_chol
-from ..math.generic_couplings import thorisson
+from ..math.couplings import thorisson
 from ..math.mvn import rvs, logpdf
 
 _EPS = 0.01  # this is a small float to make sure that log2(2**k) = k exactly
@@ -24,49 +24,6 @@ If they vary, the results are simply void. Typically, within the scope of this c
 this will only be the case if you are considering latent Gaussian dynamics with fixed parameters. 
 Please be careful.
 """
-
-
-def one_shot(key, lgssm_1: LGSSM, lgssm_2: LGSSM, _ms_1, _Ps_1, _ms_2, _Ps_2, parallel: bool, C: Numeric = 1.):
-    """
-    One shot coupling between two LGSSM models.
-
-    Parameters
-    ----------
-    key: PRNGKey
-        Random number generator key.
-    lgssm_1: LGSSM
-        LGSSM model 1.
-    lgssm_2: LGSSM
-        LGSSM model 2.
-    _ms_1
-    _Ps_1
-    _ms_2
-    _Ps_2
-    parallel: bool
-        If True, the computations are done _parallel in time.
-    C: Numeric
-        Coupling suboptimality, this controls the variance of the run time.
-
-    Returns
-    -------
-    xs_1: Array
-        State samples from model 1.
-    xs_2: Array
-        State samples from model 2.
-    coupled: bool
-        If True, the samples are coupled.
-
-    """
-    ms_1, Ps_1, ell_1 = filtering(lgssm_1, parallel)
-    ms_2, Ps_2, ell_2 = filtering(lgssm_2, parallel)
-    p = lambda k: sampling(k, ms_1, Ps_1, lgssm_1, parallel)
-    q = lambda k: sampling(k, ms_2, Ps_2, lgssm_2, parallel)
-
-    log_p = lambda xs: lgssm_trajectory_loglikelihood(ell_1, xs, lgssm_1)
-    log_q = lambda xs: lgssm_trajectory_loglikelihood(ell_2, xs, lgssm_2)
-
-    xs_1, xs_2, coupled, _ = thorisson(key, p, q, log_p, log_q, C)
-    return xs_1, xs_2, coupled
 
 
 def progressive(key: PRNGKey, lgssm_1: LGSSM, lgssm_2: LGSSM, ms_1, Ps_1, ms_2, Ps_2,

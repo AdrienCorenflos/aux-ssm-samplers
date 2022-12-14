@@ -64,9 +64,7 @@ def test_flat_potential(backward):
 
     cov_diag = cov[rows, cols]  # marginal variances
     sub_cov_diag = cov[rows[:-1], cols[1:]]  # Covariances between adjacent time steps
-    print(cov_diag)
-    print(sub_cov_diag)
-    print(xs.mean(axis=0))
+
     npt.assert_allclose(xs.mean(axis=0), 0., atol=atol)
     npt.assert_allclose(cov_diag, 1., atol=atol)
     npt.assert_allclose(sub_cov_diag, RHO, atol=atol)

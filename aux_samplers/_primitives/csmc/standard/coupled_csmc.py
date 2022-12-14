@@ -10,7 +10,7 @@ from jax import numpy as jnp, tree_map
 from aux_samplers._primitives.csmc.base import UnivariatePotential, Dynamics, Potential, CSMCState, \
     CoupledCSMCState, CoupledDistribution, CoupledDynamics
 from aux_samplers._primitives.csmc.resamplings import coupled_multinomial
-from aux_samplers._primitives.math.generic_couplings import index_max_coupling
+from aux_samplers._primitives.math.couplings import index_max_coupling
 from aux_samplers._primitives.math.utils import normalize
 
 
