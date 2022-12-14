@@ -65,8 +65,8 @@ def test_on_gaussian(dim):
 
     # MCMC estimates
     # We do 100 experiments with 1'000'000 samples each
-    n_samples = 1_000_000
-    n_experiments = 100
+    n_samples = 10_000_000
+    n_experiments = 10
 
     coupled_results = np.zeros((n_experiments, n_samples))
     uncoupled_results = np.zeros((n_experiments, n_samples))
