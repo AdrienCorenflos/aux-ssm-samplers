@@ -16,7 +16,7 @@ def config():
 
 def get_coupled_kernel(dim):
     # A coupled MCMC kernel targeting a N-dim Gaussian distribution with mean 2
-    log_pdf = lambda z: -0.5 * jnp.sum(jnp.abs(z - 2.) ** 2)
+    log_pdf = lambda z: -jnp.sum(jnp.abs(z - 2.))
     L = 1 / dim ** 0.5
 
     def kernel(key, state: CoupledSamplerState):
@@ -44,19 +44,19 @@ def get_coupled_kernel(dim):
 
 
 @pytest.mark.skipif(jax.default_backend() != "gpu", reason="This test should be run locally with a GPU.")
-@pytest.mark.parametrize("dim", [3])
+@pytest.mark.parametrize("dim", [5])
 def test_on_gaussian(dim):
     # Test the asymptotic normality.
     SEED = 1
     np.random.seed(SEED)
     key = jax.random.PRNGKey(SEED)
 
-    K = 10 * dim
-    M = K * 10  # large M as in the paper
+    K = 50 * dim
+    M = K * 25  # large M as in the paper
     kernel = get_coupled_kernel(dim)
 
     def init_sampler(k):
-        x1, x2 = jax.random.laplace(k, (2, dim))
+        x1, x2 = jax.random.normal(k, (2, dim))
         state_1, state_2 = SamplerState(x=x1), SamplerState(x=x2)
         return CoupledSamplerState(state_1=state_1, state_2=state_2, flags=False)
 
@@ -65,13 +65,13 @@ def test_on_gaussian(dim):
 
     # MCMC estimates
     # We do 100 experiments with 1'000'000 samples each
-    n_samples = 10_000_000
-    n_experiments = 10
+    n_samples = 1_000_000
+    n_experiments = 25
 
     coupled_results = np.zeros((n_experiments, n_samples))
     uncoupled_results = np.zeros((n_experiments, n_samples))
     coupling_times = np.zeros((n_experiments, n_samples))
-    true_value = 5 * dim  # variance + mean ** 2 = dim + dim * 2 ** 2
+    true_value = 6 * dim  # variance + mean ** 2 = 2 * dim + dim * 2 ** 2
 
     estimator_here = lambda k: estimator(k, kernel, init_sampler, K, M, test_fn, True)
     vmapped_estimator = jax.jit(jax.vmap(estimator_here))
@@ -91,9 +91,9 @@ def test_on_gaussian(dim):
     fig, ax = plt.subplots(figsize=(20, 12))
     fig.suptitle("Mean estimate as a function of samples")
     ax.plot(arange, coupled_results.T, alpha=0.2, color="tab:blue")
-    ax.plot(arange, np.mean(coupled_results, 0), alpha=1., color="tab:blue", label="Cupled estimates", linewidth=3)
+    ax.plot(arange, np.mean(coupled_results, 0), alpha=1., color="tab:blue", label="Unbiased estimates", linewidth=3)
     ax.plot(arange, uncoupled_results.T, alpha=0.2, color="tab:orange")
-    ax.plot(arange, np.mean(uncoupled_results, 0), alpha=1, color="tab:orange", label="Uncoupled estimates", linewidth=3)
+    ax.plot(arange, np.mean(uncoupled_results, 0), alpha=1, color="tab:orange", label="Biased estimates", linewidth=3)
     # ax.plot(arange, ideal_resuls.T, alpha=0.2, color="tab:green")
     # ax.plot(arange, np.mean(ideal_resuls, 0), alpha=0.2, color="tab:green", label="Ideal estimates")
     ax.set_ylim(true_value - 1, true_value + 1)

@@ -27,7 +27,7 @@ def estimator(key,
     coupled_state = coupled_kernel(init_key_2, coupled_state_init)
     coupled_state.state_2, coupled_state.flags = coupled_state_init.state_2, coupled_state_init.flags
 
-    den = m - k + 1
+    den = m - k
 
     # Burnin loop: discard all samples until step k
     def first_body(_, carry):
