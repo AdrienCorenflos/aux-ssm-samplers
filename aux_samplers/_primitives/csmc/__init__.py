@@ -1,1 +1,1 @@
-from .standard import get_kernel
+from .csmc import get_kernel

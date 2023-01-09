@@ -8,7 +8,7 @@ from chex import Array
 from jax import numpy as jnp
 
 from .._primitives.csmc.base import Distribution, UnivariatePotential, Dynamics, Potential, CSMCState
-from .._primitives.csmc.standard import get_kernel as get_standard_kernel
+from .._primitives.csmc import get_kernel as get_standard_kernel
 
 
 def get_kernel(M0_factory: Callable[[Array, float], Distribution],

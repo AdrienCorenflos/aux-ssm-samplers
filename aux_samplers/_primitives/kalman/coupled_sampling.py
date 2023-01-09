@@ -12,6 +12,56 @@ from ..math.mvn import rejection, thorisson, modified_lindvall_roger
 _EPS = 0.01  # this is a small float to make sure that log2(2**k) = k exactly
 
 
+
+# Wrapper for progressive and divide and conquer
+def sampling(key: PRNGKey, lgssm_1: LGSSM, lgssm_2: LGSSM, ms_1, Ps_1, ms_2, Ps_2, parallel,
+             method: str = "rejection", **coupling_params):
+    """
+    Coupled sampling between two models. If the
+
+    Parameters
+    ----------
+    key: PRNGKey
+        Random number generator key.
+    lgssm_1: LGSSM
+        LGSSM model 1.
+    ms_1, Ps_1:
+        Filtering means and covariance matrices for LGSSM 1
+    ms_2, Ps_2:
+        Filtering means and covariance matrices for LGSSM 2
+    parallel: bool
+        If True, use parallel sampling (divide and conquer), otherwise, sequential backward sampling.
+    lgssm_2: LGSSM
+        LGSSM model 2.
+    method: str
+        Method to use for coupling. Can be "rejection", "thorisson", or "lindvall-roger".
+
+    Other Parameters
+    ----------------
+    N: int
+        If using `method="rejection"`, the parameter is N=<number of particles in the ensemble>
+    C: Numeric
+        If using "thorisson", the parameter is C=<coupling suboptimality>.
+
+    Returns
+    -------
+    xs_1: Array
+        State samples from model 1.
+    xs_2: Array
+        State samples from model 2.
+    coupled: Array
+        If True, the samples are coupled.
+
+    """
+    if parallel:
+        return divide_and_conquer(key, lgssm_1, lgssm_2, ms_1, Ps_1, ms_2, Ps_2, method, **coupling_params)
+    return progressive(key, lgssm_1, lgssm_2, ms_1, Ps_1, ms_2, Ps_2, method, **coupling_params)
+
+
+######################
+# The actual methods #
+######################
+
 def progressive(key: PRNGKey, lgssm_1: LGSSM, lgssm_2: LGSSM, ms_1, Ps_1, ms_2, Ps_2,
                 method: str = "rejection", **coupling_params):
     """
@@ -45,7 +95,7 @@ def progressive(key: PRNGKey, lgssm_1: LGSSM, lgssm_2: LGSSM, ms_1, Ps_1, ms_2, 
         State samples from model 1.
     xs_2: Array
         State samples from model 2.
-    coupled: bool
+    coupled: Array
         If True, the samples are coupled.
 
     """
@@ -123,7 +173,7 @@ def divide_and_conquer(key: PRNGKey, lgssm_1: LGSSM, lgssm_2: LGSSM, ms_1, Ps_1,
         State samples from model 1.
     xs_2: Array
         State samples from model 2.
-    coupled: bool
+    coupled: Array
         If True, the samples are coupled.
 
     """

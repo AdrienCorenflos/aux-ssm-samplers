@@ -5,7 +5,7 @@ import chex
 import jax.numpy as jnp
 from chex import ArrayTree, dataclass, Array
 
-from aux_samplers._primitives.base import CoupledSamplerState, SamplerState
+from aux_samplers._primitives.base import SamplerState
 
 _MSG = """
 The logpdf is not implemented for this {type(self).__name__} but was called.

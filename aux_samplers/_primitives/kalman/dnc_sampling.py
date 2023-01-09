@@ -2,16 +2,15 @@
 Divide and conquer sampling for LGSSMs.
 """
 import warnings
-from typing import Tuple
 
 import jax
 import jax.numpy as jnp
 import numpy as np
-from chex import Array, PRNGKey, Numeric
+from chex import Array, PRNGKey
 from jax.scipy.linalg import solve
 
 from .base import LGSSM
-from ..math.mvn import rvs, logpdf
+from ..math.mvn import rvs
 
 
 def sampling(key: PRNGKey, ms: Array, Ps: Array, lgssm: LGSSM) -> Array:
@@ -36,8 +35,8 @@ def sampling(key: PRNGKey, ms: Array, Ps: Array, lgssm: LGSSM) -> Array:
     """
 
     warnings.warn(
-        "`dnc_sampling.sampling` is a proof-of-concept (and not efficient) feature."
-        "Use mks.kalman.sampling with the argument `_parallel=True` instead.",
+        "`dnc_sampling.sampling` is a proof-of-concept (and not efficient) feature kept mostly for pedagogical reasons."
+        "Use `sampling.sampling` with the argument `parallel=True` instead.",
         UserWarning)
 
     key, key_0, key_T = jax.random.split(key, 3)
@@ -57,7 +56,7 @@ def sampling(key: PRNGKey, ms: Array, Ps: Array, lgssm: LGSSM) -> Array:
     x0 = rvs(key_0, m0, chol_0T)
     xs = xs.at[0].set(x0)
 
-    # Loop over the tree in reverse order to sample from the mid points conditionally on the parents
+    # Loop over the tree in reverse order to sample from the mid-points conditionally on the parents
     for aux, idx_left, idx, idx_right in zip(aux_tree, left_parents, to_sample, right_parents):
         key, subkey = jax.random.split(key)
         sampling_keys = jax.random.split(subkey, idx.shape[0])
