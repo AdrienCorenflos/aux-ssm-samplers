@@ -22,7 +22,7 @@ def jax_config():
 @pytest.mark.parametrize("T", [3, 5])
 @pytest.mark.parametrize("dx", [1, 2])
 @pytest.mark.parametrize("dy", [1, 3])
-@pytest.mark.parametrize("mode", ["_parallel", "dnc", "sequential"])
+@pytest.mark.parametrize("mode", ["parallel", "dnc", "sequential"])
 def test_parallel_vs_sequential(seed, T, dx, dy, mode):
     np.random.seed(seed)
     jax_key = jax.random.PRNGKey(seed)
@@ -47,7 +47,7 @@ def test_parallel_vs_sequential(seed, T, dx, dy, mode):
     lgssm = LGSSM(m0, P0, Fs, Qs, bs, Hs, Rs, cs)
     ms, Ps, ell = filtering(ys, lgssm, False)
 
-    if mode == "_parallel":
+    if mode == "parallel":
         sampling_fn = lambda key: sampling(key, ms, Ps, lgssm, True)
     elif mode == "dnc":
         sampling_fn = lambda key: dnc_sampling(key, ms, Ps, lgssm)

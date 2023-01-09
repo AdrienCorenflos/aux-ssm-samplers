@@ -48,8 +48,7 @@ def thorisson(key, m1, L1, m2, L2, C=1.):
     log_p = lambda z: logpdf(z, m1, L1)
     log_q = lambda z: logpdf(z, m2, L2)
 
-    x, y, coupled, _ = thorisson_gen(key, p, q, log_p, log_q, C)
-    return x, y, coupled
+    return thorisson_gen(key, p, q, log_p, log_q, C)
 
 
 def rejection(key: chex.PRNGKey,
@@ -285,6 +284,6 @@ def _reflection_maximal(key, N: int, m: jnp.ndarray, mu: jnp.ndarray, chol_Q: jn
     else:
         res_1 = m[None, :] + norm * chol_Q
         res_2 = mu[None, :] + reflected_norm * chol_Q
-    if N == 1:
-        return res_1[0], res_2[0], do_accept[0]
+    # if N == 1:
+    #     return res_1[0], res_2[0], do_accept[0]
     return res_1, res_2, do_accept

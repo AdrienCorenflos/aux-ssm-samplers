@@ -86,7 +86,7 @@ def get_optimal_covariance(chol_P: Float[Array, "dim dim"], chol_Sig: Float[Arra
     chol_Q: jnp.ndarray
         Cholesky of the resulting dominating matrix.
     """
-    d, _ = chol_P
+    d, _ = chol_P.shape
     if d == 1:
         return jnp.maximum(chol_P, chol_Sig)
 

@@ -107,8 +107,7 @@ def coupled_sampler(key: jnp.ndarray,
     def body(carry):
         *_, i, curr_key = carry
         next_key, sample_key, accept_key = jax.random.split(curr_key, 3)
-        sample_keys = jax.random.split(sample_key, N)
-        Xs_hat, Ys_hat, are_coupled = Gamma_hat(sample_keys)
+        Xs_hat, Ys_hat, are_coupled = Gamma_hat(sample_key, N)
 
         accept_X, accept_Y, X_hat, Y_hat, coupled_proposal = _accept_proposal_and_acceptance_ratio(accept_key,
                                                                                                    Xs_hat, Ys_hat,
@@ -210,8 +209,6 @@ def thorisson(key, p, q, log_p, log_q, C=1.):
         The resulting sampled for q
     is_coupled: bool
         Do we have X = Y? Note that if the distributions are not continuous this may be False even if X=Y.
-    n_trials: int
-        The number of trials before acceptance
 
     """
 

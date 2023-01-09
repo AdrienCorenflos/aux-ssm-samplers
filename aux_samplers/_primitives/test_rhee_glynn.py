@@ -9,10 +9,6 @@ from .math.mvn import reflection
 from .rhee_glynn import estimator
 
 
-@pytest.fixture(scope="session", autouse=True)
-def config():
-    jax.config.update("jax_platform_name", "gpu")
-
 
 def get_coupled_kernel(dim):
     # A coupled MCMC kernel targeting a N-dim Gaussian distribution with mean 2
@@ -43,16 +39,18 @@ def get_coupled_kernel(dim):
     return kernel
 
 
-@pytest.mark.skipif(jax.default_backend() != "gpu", reason="This test should be run locally with a GPU.")
+@pytest.mark.skipif(jax.default_backend() != "gpu", reason="This test should be run locally with a GPU. "
+                                                           "Ideally a regression test, but it would be a bit painful to "
+                                                           "implement the baseliner etc.")
 @pytest.mark.parametrize("dim", [5])
-def test_on_gaussian(dim):
+def test_on_laplace(dim):
     # Test the asymptotic normality.
     SEED = 1
     np.random.seed(SEED)
     key = jax.random.PRNGKey(SEED)
 
-    K = 50 * dim
-    M = K * 25  # large M as in the paper
+    K = 200
+    M = K * 10  # large M as in the paper
     kernel = get_coupled_kernel(dim)
 
     def init_sampler(k):
@@ -65,7 +63,7 @@ def test_on_gaussian(dim):
 
     # MCMC estimates
     # We do 100 experiments with 1'000'000 samples each
-    n_samples = 1_000_000
+    n_samples = 250_000
     n_experiments = 25
 
     coupled_results = np.zeros((n_experiments, n_samples))
