@@ -21,11 +21,11 @@ parser.set_defaults(debug=False)
 parser.add_argument("--n_experiments", dest="n_experiments", type=int, default=1)
 parser.add_argument("--T", dest="T", type=int, default=50)
 parser.add_argument("--D", dest="D", type=int, default=30)
-parser.add_argument("--n_samples", dest="n_samples", type=int, default=100_000)
-parser.add_argument("--burnin", dest="burnin", type=int, default=10_000)
+parser.add_argument("--n_samples", dest="n_samples", type=int, default=10_000)
+parser.add_argument("--burnin", dest="burnin", type=int, default=2_500)
 parser.add_argument("--lr", dest="lr", type=float, default=0.1)
 parser.add_argument("--target_alpha", dest="target_alpha", type=float, default=0.5)
-parser.add_argument("--beta", dest="beta", type=float, default=0.01)
+parser.add_argument("--beta", dest="beta", type=float, default=0.05)
 parser.add_argument("--delta_init", dest="delta_init", type=float, default=1e-15)
 parser.add_argument("--seed", dest="seed", type=int, default=1234)
 parser.add_argument("--style", dest="style", type=str, default="kalman")
@@ -48,7 +48,7 @@ m0, P0, F, Q, b = get_dynamics(NU, PHI, TAU, RHO, args.D)
 # STATS FN
 def stats_fn(x_1, x_2):
     # squared jumping distance averaged across dimensions, and first and second moments
-    return jnp.sum((x_2 - x_1) ** 2, axis=(-2, 1)), x_2, x_2 ** 2
+    return (x_2 - x_1) ** 2, x_2, x_2 ** 2
 
 
 # KERNEL
@@ -66,7 +66,7 @@ def loop(key, init_delta, init_state, kernel_fn, delta_fn, n_iter):
 
         if delta_fn is not None:
             delta = delta_fn(delta, args.target_alpha, avg_acceptance, args.lr)
-            jax.debug.print("delta: {}, pct_accept: {}", delta, avg_acceptance)
+            # jax.debug.print("delta: {}, pct_accept: {}", delta, avg_acceptance)
         carry = i + 1, stats, next_state, delta, avg_acceptance
         return carry, None
 
@@ -110,17 +110,25 @@ with jax.disable_jit(args.debug):
     with jax.debug_nans(args.debug):
         stats_example, trajectory_example, init_trajectory, pct_accepted_example = one_experiment(jax.random.PRNGKey(args.seed))
 
+print("pct_accepted: ", pct_accepted_example)
+plt.figure(figsize=(12, 5))
+plt.suptitle("Squared jumping distance averaged across dimensions")
+plt.plot(stats_example[0], alpha=0.5, label="mean")
+plt.show()
+
 posterior_mean = stats_example[1]
 posterior_var = stats_example[2] - stats_example[1] ** 2
 posterior_std = jnp.sqrt(posterior_var)
 
-plt.figure(figsize=(20, 10))
-plt.plot(trajectory_example[:, 0], label="true trajectory")
-plt.plot(posterior_mean[:, 0], label="posterior mean", color="tab:orange")
+component = -1
+plt.figure(figsize=(12, 5))
+plt.suptitle("Squared jumping distance averaged across dimensions")
+plt.plot(trajectory_example[:, component], label="true trajectory")
+plt.plot(posterior_mean[:, component], label="posterior mean", color="tab:orange")
 plt.fill_between(jnp.arange(args.T),
-                 posterior_mean[:, 0] - 2 * posterior_std[:, 0],
-                 posterior_mean[:, 0] + 2 * posterior_std[:, 0], alpha=0.5, color="tab:orange")
-plt.plot(init_trajectory[:, 0], label="initial trajectory", color="k", linestyle="--")
+                 posterior_mean[:, component] - 2 * posterior_std[:, component],
+                 posterior_mean[:, component] + 2 * posterior_std[:, component], alpha=0.5, color="tab:orange")
+plt.plot(init_trajectory[:, component], label="initial trajectory", color="k", linestyle="--")
 plt.legend()
 plt.show()
 #

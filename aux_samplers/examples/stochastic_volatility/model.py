@@ -59,6 +59,5 @@ def log_potential(xs, ys):
     return jnp.sum(vals)
 
 
-def _log_potential(xs, ys):
-    log_norm_const = 0.5 * math.log(2 * math.pi) - 0.5 * xs
+
 
