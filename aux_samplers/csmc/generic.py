@@ -4,17 +4,17 @@ Implements the auxiliary particle Gibbs algorithm with generic proposals.
 from typing import Optional, Callable
 
 import jax
-from chex import Array
+from chex import Array, Numeric
 from jax import numpy as jnp
 
-from .._primitives.csmc.base import Distribution, UnivariatePotential, Dynamics, Potential, CSMCState
 from .._primitives.csmc import get_kernel as get_standard_kernel
+from .._primitives.csmc.base import Distribution, UnivariatePotential, Dynamics, Potential, CSMCState
 
 
-def get_kernel(M0_factory: Callable[[Array, float], Distribution],
-               G0_factory: Callable[[Array, float], UnivariatePotential],
-               Mt_factory: Callable[[Array, float], Dynamics],
-               Gt_factory: Callable[[Array, float], Potential],
+def get_kernel(M0_factory: Callable[[Array, Numeric], Distribution],
+               G0_factory: Callable[[Array, Numeric], UnivariatePotential],
+               Mt_factory: Callable[[Array, Array], Dynamics],
+               Gt_factory: Callable[[Array, Array], Potential],
                N: int,
                backward: bool = False,
                Pt: Optional[Dynamics] = None):
@@ -57,17 +57,21 @@ def get_kernel(M0_factory: Callable[[Array, float], Distribution],
     def kernel(key, state, delta):
         # Housekeeping
         x, ancestors = state.x, state.ancestors
+        T = x.shape[0]
+
         sqrt_half_delta = jnp.sqrt(0.5 * delta)
+        if jnp.ndim(sqrt_half_delta) == 0:
+            sqrt_half_delta = sqrt_half_delta * jnp.ones((T,))
         auxiliary_key, key = jax.random.split(key)
 
         # Auxiliary observations
         u = x + sqrt_half_delta * jax.random.normal(auxiliary_key, x.shape)
 
-        m0 = M0_factory(u[0], sqrt_half_delta)
-        g0 = G0_factory(u[0], sqrt_half_delta)
+        m0 = M0_factory(u[0], sqrt_half_delta[0])
+        g0 = G0_factory(u[0], sqrt_half_delta[0])
 
-        mt = Mt_factory(u[1:], sqrt_half_delta)
-        gt = Gt_factory(u[1:], sqrt_half_delta)
+        mt = Mt_factory(u[1:], sqrt_half_delta[1:])
+        gt = Gt_factory(u[1:], sqrt_half_delta[1:])
 
         _, auxiliary_kernel = get_standard_kernel(m0, g0, mt, gt, N, backward=backward, Pt=Pt)
         return auxiliary_kernel(key, state)
@@ -75,6 +79,6 @@ def get_kernel(M0_factory: Callable[[Array, float], Distribution],
     def init(x_star):
         T, *_ = x_star.shape
         ancestors = jnp.zeros((T,), dtype=jnp.int_)
-        return CSMCState(x=x_star, ancestors=ancestors)
+        return CSMCState(x=x_star, updated=ancestors != 0)
 
     return init, kernel

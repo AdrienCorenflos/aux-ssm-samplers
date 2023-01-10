@@ -100,6 +100,7 @@ def sequential_update_one(y, m, P, H, c, R):
 def sequential_predict(m, P, F, b, Q):
     m = F @ m + b
     P = Q + F @ P @ F.T
+    P = 0.5 * (P + P.T)
     return m, P
 
 
@@ -158,4 +159,4 @@ def _filtering_init_one(F, Q, b, H, R, c, y, m, P):
     eta = temp @ (y - H @ b - c)
     J = temp @ H @ F
 
-    return A, b_std, C, eta, J
+    return A, b_std, 0.5 * (C + C.T), eta, 0.5 * (J + J.T)

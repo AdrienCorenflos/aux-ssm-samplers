@@ -12,8 +12,12 @@ from .common import GaussianDistribution, FlatPotential, FlatUnivariatePotential
 from statsmodels.graphics.tsaplots import plot_acf
 
 from ..csmc.base import CRNDistribution, CRNDynamics
-from ..csmc.standard import get_kernel, get_coupled_kernel
+from ..csmc import get_kernel, get_coupled_kernel
 
+
+@pytest.fixture(scope="module", autouse=True)
+def jax_config():
+    jax.config.update("jax_platform_name", "cpu")
 
 @pytest.mark.parametrize("backward", [True, False])
 def test_flat_potential(backward):

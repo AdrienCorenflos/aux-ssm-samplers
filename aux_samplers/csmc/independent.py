@@ -41,7 +41,7 @@ def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Pote
     # This function uses the classes defined below
     M0_factory = lambda u, scale: AuxiliaryM0(u=u, sqrt_half_delta=scale)
     G0_factory = lambda u, scale: AuxiliaryG0(M0=M0, G0=G0)
-    Mt_factory = lambda u, scale: AuxiliaryMt(params=u, sqrt_half_delta=scale)
+    Mt_factory = lambda u, scale: AuxiliaryMt(params=(u, scale))
     Gt_factory = lambda u, scale: AuxiliaryGt(Mt=Mt, Gt=Gt)
     if not parallel:
         return get_base_kernel(M0_factory, G0_factory, Mt_factory, Gt_factory, N, backward, Pt)

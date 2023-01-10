@@ -7,7 +7,7 @@ import jax.numpy as jnp
 from jax.scipy.linalg import solve_triangular
 from jaxtyping import Float, Array
 
-from aux_samplers._primitives.math.couplings import thorisson as thorisson_gen, coupled_sampler
+from ..couplings import thorisson as thorisson_gen, coupled_sampler
 from .base import logpdf, get_optimal_covariance, rvs, tril_log_det
 
 _EPS = 0.01  # this is a small float to make sure that log2(2**k) = k exactly

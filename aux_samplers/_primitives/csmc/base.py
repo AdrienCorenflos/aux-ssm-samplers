@@ -14,10 +14,10 @@ Please implement this function or choose the standard cSMC with no backward pass
 """
 
 
-@dataclass(init=False)
+@dataclass
 class CSMCState(SamplerState):
     x: ArrayTree
-    ancestors: Array
+    updated: Array
 
 
 @chex.dataclass

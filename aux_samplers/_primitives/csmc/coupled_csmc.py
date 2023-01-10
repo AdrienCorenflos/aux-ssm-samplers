@@ -49,7 +49,7 @@ def get_coupled_kernel(cM0: CoupledDistribution, G0_1: UnivariatePotential, G0_2
 
     def kernel(key, coupled_state):
         key_fwd, key_bwd = jax.random.split(key)
-        state_1, state_2, coupled_flags = coupled_state.state_1, coupled_state.state_2, coupled_state.coupled_flags
+        state_1, state_2, coupled_flags = coupled_state.state_1, coupled_state.state_2, coupled_state.flags
         w_1_T, xs_1, log_ws_1, As_1, w_2_T, xs_2, log_ws_2, As_2, coupled_flags = _ccsmc(key_fwd,
                                                                                          state_1.x,
                                                                                          state_2.x,
@@ -67,16 +67,16 @@ def get_coupled_kernel(cM0: CoupledDistribution, G0_1: UnivariatePotential, G0_2
                                                                                                 log_ws_1, log_ws_2,
                                                                                                 coupled_flags)
 
-        state_1 = CSMCState(x=x_1, ancestors=ancestors_1)
-        state_2 = CSMCState(x=x_2, ancestors=ancestors_2)
+        state_1 = CSMCState(x=x_1, updated=ancestors_1 != 0)
+        state_2 = CSMCState(x=x_2, updated=ancestors_2 != 0)
         coupled_state = CoupledSamplerState(state_1=state_1, state_2=state_2, flags=coupled_flags)
         return coupled_state
 
     def init(x_star_1, x_star_2):
         T, *_ = x_star_1.shape
         ancestors = jnp.zeros((T,), dtype=jnp.int_)
-        state_1 = CSMCState(x=x_star_1, ancestors=ancestors)
-        state_2 = CSMCState(x=x_star_2, ancestors=ancestors)
+        state_1 = CSMCState(x=x_star_1, updated=ancestors == 0)
+        state_2 = CSMCState(x=x_star_2, updated=ancestors == 0)
         coupled_state = CoupledSamplerState(state_1=state_1, state_2=state_2, flags=jnp.zeros((T,), dtype=jnp.bool_))
         return coupled_state
 

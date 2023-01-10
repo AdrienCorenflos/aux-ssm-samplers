@@ -31,10 +31,9 @@ class AuxiliaryG0(UnivariatePotential):
 
 @chex.dataclass
 class AuxiliaryMt(Dynamics):
-    sqrt_half_delta: float = None  # needs a default as Dynamics has params with default None
-
-    def sample(self, key, x_t, u):
-        return u[None, ...] + self.sqrt_half_delta * jax.random.normal(key, x_t.shape)
+    def sample(self, key, x_t, params):
+        u, sqrt_half_delta = params
+        return u[None, ...] + sqrt_half_delta * jax.random.normal(key, x_t.shape)
 
 
 @chex.dataclass

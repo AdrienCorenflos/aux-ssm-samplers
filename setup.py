@@ -20,9 +20,14 @@ setuptools.setup(
     version="0.1",
     packages=setuptools.find_packages(),
     install_requires=[
+        "chex>=0.1.5",
         "jax>=0.3.25",
         "jaxlib>=0.3.25",
         "jaxtyping>=0.2.8",
+        "statsmodels>=0.13.5",
+        "tensorflow_probability>=0.19.0",
+        "tqdm>=4.64.1",
+
     ],
     long_description_content_type="text/markdown",
     keywords="probabilistic state space bayesian statistics sampling algorithms",

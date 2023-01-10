@@ -76,13 +76,15 @@ def mean_and_chol(F, Q, b, m, P):
         Gain to go from time t+1 to t.
     """
     S = F @ P @ F.T + Q  # noqa: bad static type checking
+    S = 0.5 * (S + S.T)
     gain = P @ solve(S, F, assume_a="pos").T
 
     inc_Sig = P - gain @ S @ gain.T
+    inc_Sig = 0.5 * (inc_Sig + inc_Sig.T)
+
     inc_m = m - gain @ (F @ m + b)
 
     L = jnp.linalg.cholesky(inc_Sig)
-
     # When there is 0 uncertainty, the Cholesky decomposition is not defined.
     L = jnp.nan_to_num(L)
     return inc_m, L, gain

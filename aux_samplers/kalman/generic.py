@@ -8,10 +8,10 @@ from jax import numpy as jnp
 from .._primitives.kalman import filtering, LGSSM, sampling, posterior_logpdf
 
 
-@dataclass(init=False)
+@dataclass
 class KalmanSampler:
     x: Array
-    alpha: Numeric
+    updated: Numeric
 
 
 def get_kernel(dynamics_factory,
@@ -44,7 +44,8 @@ def get_kernel(dynamics_factory,
 
     def kernel(key, state, delta):
         # Housekeeping
-        x, ancestors = state.x, state.ancestors
+        x = state.x
+        sqrt_delta = jnp.sqrt(delta)
         sqrt_half_delta = jnp.sqrt(0.5 * delta)
         auxiliary_key, sampling_key, accept_key = jax.random.split(key, 3)
 
@@ -79,18 +80,47 @@ def get_kernel(dynamics_factory,
         log_alpha += log_lgssm_rev - log_lgssm_prop
 
         # Correct the lgssm proposal distribution to get pi(x | u)
-        diff_prop, diff = x_prop - u, x - u
+        diff_prop, diff = (x_prop - u) / sqrt_delta, (x - u) / sqrt_delta
 
-        correction = jnp.sum(diff_prop ** 2 - diff ** 2) / delta
+        correction = jnp.sum(diff_prop ** 2 - diff ** 2)
         log_alpha -= correction
         alpha = jnp.exp(jnp.minimum(0, log_alpha))
 
         # Accept or reject and update the state
         accept = jax.random.bernoulli(accept_key, alpha)
-        x = jnp.where(accept, x_prop, x)
-        return KalmanSampler(x=x, alpha=alpha)
+        x = jax.lax.select(accept, x_prop, x)
+
+        return KalmanSampler(x=x, updated=accept)
 
     def init(x_star):
-        return KalmanSampler(x=x_star, alpha=1.)
+        return KalmanSampler(x=x_star, updated=False)
 
     return init, kernel
+
+
+def delta_adaptation(delta, target_rate, acceptance_rate, adaptation_rate, min_delta=1e-15):
+    """
+    A simple adaptation rule for the delta parameter of the auxiliary Kalman sampler.
+
+    Parameters
+    ----------
+    delta: float
+        Current value of delta.
+    target_rate: float
+        Target acceptance rate.
+    acceptance_rate: float
+        Current average acceptance rate.
+    adaptation_rate: float
+        Adaptation rate.
+    min_delta: float
+        Minimum value of delta.
+
+    Returns
+    -------
+    delta: float
+        Adapted value of delta.
+
+    """
+
+    out = delta * jnp.exp(adaptation_rate * (acceptance_rate - target_rate))
+    return jnp.maximum(out, min_delta)

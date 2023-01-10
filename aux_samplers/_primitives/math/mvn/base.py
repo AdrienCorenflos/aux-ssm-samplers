@@ -65,7 +65,8 @@ def rvs(key: PRNGKey, m: Float[Array, "dim"], chol: Float[Array, "dim dim"]) -> 
     chol: Array
         Cholesky decomposition of the covariance matrix of the multivariate normal distribution.
     """
-    return m + chol @ jax.random.normal(key, shape=m.shape)
+    eps = jax.random.normal(key, shape=m.shape)
+    return m + jnp.einsum("...ij,...j->...i", chol, eps)
 
 
 def get_optimal_covariance(chol_P: Float[Array, "dim dim"], chol_Sig: Float[Array, "dim dim"]):

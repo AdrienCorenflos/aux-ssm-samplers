@@ -54,12 +54,12 @@ def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Pote
             x, ancestors = _backward_scanning_pass(key_bwd, w_T, xs, As)
         else:
             x, ancestors = _backward_sampling_pass(key_bwd, Pt, w_T, xs, log_ws)
-        return CSMCState(x=x, ancestors=ancestors)
+        return CSMCState(x=x, updated=ancestors != 0)
 
     def init(x_star):
         T, *_ = x_star.shape
         ancestors = jnp.zeros((T,), dtype=jnp.int_)
-        return CSMCState(x=x_star, ancestors=ancestors)
+        return CSMCState(x=x_star, updated=ancestors == 0)
 
     return init, kernel
 
