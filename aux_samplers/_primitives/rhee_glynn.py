@@ -66,7 +66,7 @@ def estimator(key,
 
         f_x_t_p_1 = test_fn(coupled_state_t_p_1.state_1.x)
 
-        def if_first(): return tree_map(lambda u, v: u + v / den, one_t, f_x_t_p_1)
+        def if_first(): return tree_map(lambda u, v: u + v / den, one_t, f_x_t_p_1)  # one_t + f_x_t_p_1 / den
 
         def else_first(): return one_t
 

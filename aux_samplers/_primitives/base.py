@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Union, Callable
 
 import jax.numpy as jnp
 from chex import Array, ArrayNumpy, dataclass, ArrayTree
