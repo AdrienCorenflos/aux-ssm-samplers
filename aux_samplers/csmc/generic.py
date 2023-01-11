@@ -1,7 +1,7 @@
 """
 Implements the auxiliary particle Gibbs algorithm with generic proposals.
 """
-from typing import Optional, Callable
+from typing import Optional, Callable, Tuple
 
 import jax
 from chex import Array, Numeric
@@ -11,10 +11,7 @@ from .._primitives.csmc import get_kernel as get_standard_kernel
 from .._primitives.csmc.base import Distribution, UnivariatePotential, Dynamics, Potential, CSMCState
 
 
-def get_kernel(M0_factory: Callable[[Array, Numeric], Distribution],
-               G0_factory: Callable[[Array, Numeric], UnivariatePotential],
-               Mt_factory: Callable[[Array, Array], Dynamics],
-               Gt_factory: Callable[[Array, Array], Potential],
+def get_kernel(factory: Callable[[Array, Numeric], Tuple[Distribution, UnivariatePotential,Dynamics, Potential]],
                N: int,
                backward: bool = False,
                Pt: Optional[Dynamics] = None):
@@ -26,14 +23,9 @@ def get_kernel(M0_factory: Callable[[Array, Numeric], Distribution],
 
     Parameters
     ----------
-    M0_factory:
-        Factory for the initial distribution.
-    G0_factory:
-        Factory for the initial potential.
-    Mt_factory:
-        Factory for the dynamics of the model.
-    Gt_factory:
-        Factory for the potential of the model.
+    factory:
+        Factory that returns the initial distribution, the initial potential, the dynamics,
+        and the potential of the models.
     N:
         Total number of particles to use in the cSMC sampler.
     backward: bool
@@ -56,7 +48,7 @@ def get_kernel(M0_factory: Callable[[Array, Numeric], Distribution],
 
     def kernel(key, state, delta):
         # Housekeeping
-        x, ancestors = state.x, state.ancestors
+        x = state.x
         T = x.shape[0]
 
         sqrt_half_delta = jnp.sqrt(0.5 * delta)
@@ -65,13 +57,9 @@ def get_kernel(M0_factory: Callable[[Array, Numeric], Distribution],
         auxiliary_key, key = jax.random.split(key)
 
         # Auxiliary observations
-        u = x + sqrt_half_delta * jax.random.normal(auxiliary_key, x.shape)
+        u = x + sqrt_half_delta[:, None] * jax.random.normal(auxiliary_key, x.shape)
 
-        m0 = M0_factory(u[0], sqrt_half_delta[0])
-        g0 = G0_factory(u[0], sqrt_half_delta[0])
-
-        mt = Mt_factory(u[1:], sqrt_half_delta[1:])
-        gt = Gt_factory(u[1:], sqrt_half_delta[1:])
+        m0, g0, mt, gt = factory(u, sqrt_half_delta)
 
         _, auxiliary_kernel = get_standard_kernel(m0, g0, mt, gt, N, backward=backward, Pt=Pt)
         return auxiliary_kernel(key, state)
@@ -82,3 +70,32 @@ def get_kernel(M0_factory: Callable[[Array, Numeric], Distribution],
         return CSMCState(x=x_star, updated=ancestors != 0)
 
     return init, kernel
+
+
+
+def delta_adaptation(delta, target_rate, acceptance_rate, adaptation_rate, min_delta=1e-15):
+    """
+    A simple adaptation rule for the delta parameter of the auxiliary Kalman sampler.
+
+    Parameters
+    ----------
+    delta: Array
+        Current value of delta per time step.
+    target_rate: float
+        Target acceptance rate.
+    acceptance_rate: float
+        Current average acceptance rate.
+    adaptation_rate: float
+        Adaptation rate.
+    min_delta: float
+        Minimum value of delta.
+
+    Returns
+    -------
+    delta: Array
+        Adapted value of delta.
+
+    """
+
+    out = delta * jnp.exp(adaptation_rate * (acceptance_rate - target_rate))
+    return jnp.maximum(out, min_delta)

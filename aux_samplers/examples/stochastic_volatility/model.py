@@ -1,4 +1,3 @@
-import math
 from functools import partial
 
 import jax
@@ -57,7 +56,3 @@ def log_potential(xs, ys):
     vals = norm.logpdf(ys, scale=scale)
     vals = jnp.nan_to_num(vals)  # in case the scale is infinite, we get nan, but we want 0
     return jnp.sum(vals)
-
-
-
-

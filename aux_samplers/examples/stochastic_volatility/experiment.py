@@ -4,7 +4,10 @@ import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 from jax.tree_util import tree_map
+
+from aux_samplers.csmc import delta_adaptation as csmc_delta_adaptation
 from aux_samplers.kalman import delta_adaptation as kalman_delta_adaptation
+from auxiliary_csmc import get_kernel as get_csmc_kernel
 from auxiliary_kalman import get_kernel as get_kalman_kernel
 from model import get_data, get_dynamics
 
@@ -18,23 +21,30 @@ parser.add_argument('--debug', action='store_true')
 parser.add_argument('--no-debug', dest='debug', action='store_false')
 parser.set_defaults(debug=False)
 
+parser.add_argument('--gpu', action='store_true')
+parser.add_argument('--no-gpu', dest='gpu', action='store_false')
+parser.set_defaults(gpu=False)
+
 parser.add_argument("--n_experiments", dest="n_experiments", type=int, default=1)
-parser.add_argument("--T", dest="T", type=int, default=50)
+parser.add_argument("--T", dest="T", type=int, default=100)
 parser.add_argument("--D", dest="D", type=int, default=30)
-parser.add_argument("--n_samples", dest="n_samples", type=int, default=10_000)
-parser.add_argument("--burnin", dest="burnin", type=int, default=2_500)
+parser.add_argument("--n_samples", dest="n_samples", type=int, default=5_000)
+parser.add_argument("--burnin", dest="burnin", type=int, default=1_000)
 parser.add_argument("--lr", dest="lr", type=float, default=0.1)
 parser.add_argument("--target_alpha", dest="target_alpha", type=float, default=0.5)
-parser.add_argument("--beta", dest="beta", type=float, default=0.05)
+parser.add_argument("--beta", dest="beta", type=float, default=0.1)
 parser.add_argument("--delta_init", dest="delta_init", type=float, default=1e-15)
 parser.add_argument("--seed", dest="seed", type=int, default=1234)
 parser.add_argument("--style", dest="style", type=str, default="kalman")
+parser.add_argument("--gradient", dest="gradient", type=bool, default=True)
+parser.add_argument("--backward", dest="backward", type=bool, default=True)
+parser.add_argument("--N", dest="N", type=int, default=25)
 
 args = parser.parse_args()
 
 # BACKEND CONFIG
 jax.config.update("jax_enable_x64", True)
-if not args.parallel:
+if not args.gpu:
     jax.config.update("jax_platform_name", "cpu")
 else:
     jax.config.update("jax_platform_name", "gpu")
@@ -43,6 +53,9 @@ else:
 # we use the same parameters as Finke and Thiery.
 NU, PHI, TAU, RHO = 0., .9, 2., .25
 m0, P0, F, Q, b = get_dynamics(NU, PHI, TAU, RHO, args.D)
+
+if args.style == "csmc":
+    args.target_alpha = 1 - (1 + args.N) ** (-1 / 3)
 
 
 # STATS FN
@@ -54,9 +67,13 @@ def stats_fn(x_1, x_2):
 # KERNEL
 def loop(key, init_delta, init_state, kernel_fn, delta_fn, n_iter):
     keys = jax.random.split(key, n_iter)
+    print_func = lambda z, *_: print(f"\riteration: {z[0]}, avg_delta: {z[1]:.2e}, avg_accept: {z[2]:.1%}", end="")
 
     def body_fn(carry, key_inp):
+        from jax.experimental.host_callback import id_tap
         i, stats, state, delta, avg_acceptance = carry
+        id_tap(print_func, (i, jnp.mean(delta), jnp.mean(avg_acceptance)))
+
         next_state = kernel_fn(key_inp, state, delta)
 
         next_stats = stats_fn(state.x, next_state.x)
@@ -66,7 +83,6 @@ def loop(key, init_delta, init_state, kernel_fn, delta_fn, n_iter):
 
         if delta_fn is not None:
             delta = delta_fn(delta, args.target_alpha, avg_acceptance, args.lr)
-            # jax.debug.print("delta: {}, pct_accept: {}", delta, avg_acceptance)
         carry = i + 1, stats, next_state, delta, avg_acceptance
         return carry, None
 
@@ -90,14 +106,19 @@ def one_experiment(exp_key):
     if args.style == "kalman":
         init_fn, kernel_fn = get_kalman_kernel(ys, m0, P0, F, Q, b, args.parallel)
         delta_fn = kalman_delta_adaptation
+        delta_init = args.delta_init
+    elif args.style == "csmc":
+        init_fn, kernel_fn = get_csmc_kernel(ys, m0, P0, F, Q, b, args.N, args.backward, args.parallel, args.gradient)
+        delta_fn = csmc_delta_adaptation
+        delta_init = args.delta_init * jnp.ones((args.T,))
     else:
-        raise NotImplementedError()
+        raise NotImplementedError
 
     init_state = init_fn(xs_init)
 
     # BURNIN
     _, _, burnin_state, burnin_delta, burnin_avg_acceptance = loop(burnin_key,
-                                                                   args.delta_init,
+                                                                   delta_init,
                                                                    init_state,
                                                                    kernel_fn,
                                                                    delta_fn,
@@ -106,9 +127,11 @@ def one_experiment(exp_key):
     _, stats, _, _, pct_accepted = loop(sample_key, burnin_delta, burnin_state, kernel_fn, None, args.n_samples)
     return stats, true_xs, xs_init, pct_accepted
 
+
 with jax.disable_jit(args.debug):
     with jax.debug_nans(args.debug):
-        stats_example, trajectory_example, init_trajectory, pct_accepted_example = one_experiment(jax.random.PRNGKey(args.seed))
+        stats_example, trajectory_example, init_trajectory, pct_accepted_example = one_experiment(
+            jax.random.PRNGKey(args.seed))
 
 print("pct_accepted: ", pct_accepted_example)
 plt.figure(figsize=(12, 5))
