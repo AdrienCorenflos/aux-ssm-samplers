@@ -54,11 +54,12 @@ def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Pote
         else:
             grad_pi = 0. * u
         m0 = AuxiliaryM0(u=u[0], sqrt_half_delta=scale[0], grad=grad_pi[0])
-        g0 = AuxiliaryG0(M0=M0, G0=G0)
         mt = AuxiliaryMt(params=(u[1:], scale[1:], grad_pi[1:]))
         if gradient:
+            g0 = GradientAuxiliaryG0(M0=M0, G0=G0, u=u[0], sqrt_half_delta=scale[0], grad=grad_pi[0])
             gt = GradientAuxiliaryGt(Mt=Mt, Gt=Gt, params=(u[1:], scale[1:], grad_pi[1:]))
         else:
+            g0 = AuxiliaryG0(M0=M0, G0=G0)
             gt = AuxiliaryGt(Mt=Mt, Gt=Gt)
         return m0, g0, mt, gt
 
@@ -110,6 +111,26 @@ class AuxiliaryG0(UnivariatePotential):
 
     def __call__(self, x):
         return self.G0(x) + self.M0.logpdf(x)
+
+@chex.dataclass
+class GradientAuxiliaryG0(UnivariatePotential):
+    M0: Distribution
+    G0: UnivariatePotential
+    u: Array
+    sqrt_half_delta: float
+    grad: Array
+
+    def __call__(self, x):
+        half_delta = self.sqrt_half_delta ** 2
+        mean = self.u + half_delta * self.grad
+
+        out = self.G0(x) + self.M0.logpdf(x)
+        out += jnp.sum(norm.logpdf(x, self.u, self.sqrt_half_delta), axis=-1)
+        out -= jnp.sum(norm.logpdf(x, mean, self.sqrt_half_delta), axis=-1)
+        return out
+
+
+
 
 
 @chex.dataclass

@@ -26,17 +26,17 @@ parser.add_argument('--no-gpu', dest='gpu', action='store_false')
 parser.set_defaults(gpu=False)
 
 parser.add_argument("--n_experiments", dest="n_experiments", type=int, default=1)
-parser.add_argument("--T", dest="T", type=int, default=100)
+parser.add_argument("--T", dest="T", type=int, default=50)
 parser.add_argument("--D", dest="D", type=int, default=30)
-parser.add_argument("--n_samples", dest="n_samples", type=int, default=5_000)
-parser.add_argument("--burnin", dest="burnin", type=int, default=1_000)
+parser.add_argument("--n_samples", dest="n_samples", type=int, default=25_000)
+parser.add_argument("--burnin", dest="burnin", type=int, default=10_000)
 parser.add_argument("--lr", dest="lr", type=float, default=0.1)
 parser.add_argument("--target_alpha", dest="target_alpha", type=float, default=0.5)
-parser.add_argument("--beta", dest="beta", type=float, default=0.1)
+parser.add_argument("--beta", dest="beta", type=float, default=0.01)
 parser.add_argument("--delta_init", dest="delta_init", type=float, default=1e-15)
 parser.add_argument("--seed", dest="seed", type=int, default=1234)
-parser.add_argument("--style", dest="style", type=str, default="kalman")
-parser.add_argument("--gradient", dest="gradient", type=bool, default=True)
+parser.add_argument("--style", dest="style", type=str, default="csmc")
+parser.add_argument("--gradient", dest="gradient", type=bool, default=False)
 parser.add_argument("--backward", dest="backward", type=bool, default=True)
 parser.add_argument("--N", dest="N", type=int, default=25)
 
@@ -71,23 +71,24 @@ def loop(key, init_delta, init_state, kernel_fn, delta_fn, n_iter):
 
     def body_fn(carry, key_inp):
         from jax.experimental.host_callback import id_tap
-        i, stats, state, delta, avg_acceptance = carry
-        id_tap(print_func, (i, jnp.mean(delta), jnp.mean(avg_acceptance)))
+        i, stats, state, delta, exp_avg_acceptance, avg_acceptance = carry
+        id_tap(print_func, (i, jnp.mean(delta), jnp.mean(exp_avg_acceptance)))
 
         next_state = kernel_fn(key_inp, state, delta)
 
         next_stats = stats_fn(state.x, next_state.x)
         # Exponentially weighted average.
-        avg_acceptance = args.beta * next_state.updated + (1 - args.beta) * avg_acceptance
+        exp_avg_acceptance = args.beta * next_state.updated + (1. - args.beta) * exp_avg_acceptance
+        avg_acceptance = (i * avg_acceptance + 1. * next_state.updated) / (i + 1)
         stats = tree_map(lambda u, v: (i * u + v) / (i + 1), stats, next_stats)
 
         if delta_fn is not None:
-            delta = delta_fn(delta, args.target_alpha, avg_acceptance, args.lr)
-        carry = i + 1, stats, next_state, delta, avg_acceptance
+            delta = delta_fn(delta, args.target_alpha, exp_avg_acceptance, args.lr)
+        carry = i + 1, stats, next_state, delta, exp_avg_acceptance, avg_acceptance
         return carry, None
 
     init_stats = stats_fn(init_state.x, init_state.x)
-    init = 0, init_stats, init_state, init_delta, 1. * init_state.updated
+    init = 0, init_stats, init_state, init_delta, 1. * init_state.updated, 1. * init_state.updated
 
     out, _ = jax.lax.scan(body_fn, init, keys)
     return out
@@ -117,26 +118,37 @@ def one_experiment(exp_key):
     init_state = init_fn(xs_init)
 
     # BURNIN
-    _, _, burnin_state, burnin_delta, burnin_avg_acceptance = loop(burnin_key,
-                                                                   delta_init,
-                                                                   init_state,
-                                                                   kernel_fn,
-                                                                   delta_fn,
-                                                                   args.burnin)
+    _, _, burnin_state, burnin_delta, burnin_avg_acceptance, _ = loop(burnin_key,
+                                                                      delta_init,
+                                                                      init_state,
+                                                                      kernel_fn,
+                                                                      delta_fn,
+                                                                      args.burnin)
 
-    _, stats, _, _, pct_accepted = loop(sample_key, burnin_delta, burnin_state, kernel_fn, None, args.n_samples)
-    return stats, true_xs, xs_init, pct_accepted
+    _, stats, _, _, _, pct_accepted = loop(sample_key, burnin_delta, burnin_state, kernel_fn, None, args.n_samples)
+    return stats, true_xs, ys, xs_init, pct_accepted, burnin_delta
 
 
 with jax.disable_jit(args.debug):
     with jax.debug_nans(args.debug):
-        stats_example, trajectory_example, init_trajectory, pct_accepted_example = one_experiment(
+        stats_example, trajectory_example, data_example, init_trajectory, pct_accepted_example, delta_example = one_experiment(
             jax.random.PRNGKey(args.seed))
 
+import numpy as np
+stats_example = [np.array(s) for s in stats_example]
+trajectory_example = np.array(trajectory_example)
+data_example = np.array(data_example)
+init_trajectory = np.array(init_trajectory)
+pct_accepted_example = np.array(pct_accepted_example)
+delta_example = np.array(delta_example)
+
+print()
 print("pct_accepted: ", pct_accepted_example)
-plt.figure(figsize=(12, 5))
+_, ax = plt.subplots(figsize=(12, 5))
 plt.suptitle("Squared jumping distance averaged across dimensions")
-plt.plot(stats_example[0], alpha=0.5, label="mean")
+ax.plot(stats_example[0], alpha=0.5, label="EJSD")
+ax.plot(delta_example, label="Delta", linestyle="--", color="tab:orange")
+ax.twinx().plot(pct_accepted_example, label="acceptance probability", color="k")
 plt.show()
 
 posterior_mean = stats_example[1]
@@ -145,7 +157,7 @@ posterior_std = jnp.sqrt(posterior_var)
 
 component = -1
 plt.figure(figsize=(12, 5))
-plt.suptitle("Squared jumping distance averaged across dimensions")
+plt.suptitle("One trajectory posterior")
 plt.plot(trajectory_example[:, component], label="true trajectory")
 plt.plot(posterior_mean[:, component], label="posterior mean", color="tab:orange")
 plt.fill_between(jnp.arange(args.T),

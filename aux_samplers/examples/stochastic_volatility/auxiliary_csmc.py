@@ -10,8 +10,11 @@ from aux_samplers.csmc import get_independent_kernel, Distribution, UnivariatePo
 
 
 def get_kernel(ys, m0, P0, F, Q, b, n_samples, backward, parallel, gradient):
-    d = m0.shape[0]
+    M0, G0, Mt, Gt = get_feynman_kac(ys, m0, P0, F, Q, b)
+    return get_independent_kernel(M0, G0, Mt, Gt, n_samples, backward, Mt, gradient, parallel)
 
+
+def get_feynman_kac(ys, m0, P0, F, Q, b):
     chol_P0 = jnp.linalg.cholesky(P0)
     chol_Q = jnp.linalg.cholesky(Q)
 
@@ -42,5 +45,4 @@ def get_kernel(ys, m0, P0, F, Q, b, n_samples, backward, parallel, gradient):
         def __call__(self, x_t_p_1, _x_t, y):
             return jnp.sum(norm.logpdf(y, loc=0, scale=jnp.exp(0.5 * x_t_p_1)), -1)
 
-    mt = Mt()
-    return get_independent_kernel(M0(), G0(), mt, Gt(params=ys[1:]), n_samples, backward, mt, gradient, parallel)
+    return M0(), G0(), Mt(), Gt(params=ys[1:])
