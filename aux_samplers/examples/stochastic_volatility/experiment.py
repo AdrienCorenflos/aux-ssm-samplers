@@ -8,34 +8,39 @@ from jax.tree_util import tree_map
 from aux_samplers.csmc import delta_adaptation as csmc_delta_adaptation
 from aux_samplers.kalman import delta_adaptation as kalman_delta_adaptation
 from auxiliary_csmc import get_kernel as get_csmc_kernel
+from auxiliary_guided_csmc import get_kernel as get_guided_csmc_kernel
 from auxiliary_kalman import get_kernel as get_kalman_kernel
 from model import get_data, get_dynamics
 
 # ARGS PARSING
 
 parser = argparse.ArgumentParser("Run a Stochastic volatility experiment")
+# General arguments
 parser.add_argument('--parallel', action='store_true')
 parser.add_argument('--no-parallel', dest='parallel', action='store_false')
 parser.set_defaults(parallel=False)
 parser.add_argument('--debug', action='store_true')
 parser.add_argument('--no-debug', dest='debug', action='store_false')
 parser.set_defaults(debug=False)
-
+parser.add_argument('--debug-nans', action='store_true')
+parser.add_argument('--no-debug-nans', dest='debug_nans', action='store_false')
+parser.set_defaults(debug_nans=False)
 parser.add_argument('--gpu', action='store_true')
 parser.add_argument('--no-gpu', dest='gpu', action='store_false')
 parser.set_defaults(gpu=False)
 
+# Experiment arguments
 parser.add_argument("--n_experiments", dest="n_experiments", type=int, default=1)
 parser.add_argument("--T", dest="T", type=int, default=50)
 parser.add_argument("--D", dest="D", type=int, default=30)
-parser.add_argument("--n_samples", dest="n_samples", type=int, default=25_000)
-parser.add_argument("--burnin", dest="burnin", type=int, default=10_000)
-parser.add_argument("--lr", dest="lr", type=float, default=0.1)
+parser.add_argument("--n_samples", dest="n_samples", type=int, default=10_000)
+parser.add_argument("--burnin", dest="burnin", type=int, default=2_500)
+parser.add_argument("--lr", dest="lr", type=float, default=0.25)
 parser.add_argument("--target_alpha", dest="target_alpha", type=float, default=0.5)
-parser.add_argument("--beta", dest="beta", type=float, default=0.01)
-parser.add_argument("--delta_init", dest="delta_init", type=float, default=1e-15)
+parser.add_argument("--beta", dest="beta", type=float, default=0.05)
+parser.add_argument("--delta_init", dest="delta_init", type=float, default=1e-20)
 parser.add_argument("--seed", dest="seed", type=int, default=1234)
-parser.add_argument("--style", dest="style", type=str, default="csmc")
+parser.add_argument("--style", dest="style", type=str, default="csmc-guided")
 parser.add_argument("--gradient", dest="gradient", type=bool, default=False)
 parser.add_argument("--backward", dest="backward", type=bool, default=True)
 parser.add_argument("--N", dest="N", type=int, default=25)
@@ -54,7 +59,7 @@ else:
 NU, PHI, TAU, RHO = 0., .9, 2., .25
 m0, P0, F, Q, b = get_dynamics(NU, PHI, TAU, RHO, args.D)
 
-if args.style == "csmc":
+if args.style != "kalman":
     args.target_alpha = 1 - (1 + args.N) ** (-1 / 3)
 
 
@@ -67,23 +72,30 @@ def stats_fn(x_1, x_2):
 # KERNEL
 def loop(key, init_delta, init_state, kernel_fn, delta_fn, n_iter):
     keys = jax.random.split(key, n_iter)
-    print_func = lambda z, *_: print(f"\riteration: {z[0]}, avg_delta: {z[1]:.2e}, avg_accept: {z[2]:.1%}", end="")
+    print_func = lambda z, *_: print(f"\riteration: {z[0]}, "
+                                     f"min_delta: {z[1]:.2e}, max_delta: {z[2]:.2e}, "
+                                     f"min_expw_accept: {z[3]:.1%},  max_expw_accept: {z[4]:.1%}, "
+                                     f"min_accept: {z[5]:.1%}, min_accept: {z[6]:.1%}", end="")
 
     def body_fn(carry, key_inp):
         from jax.experimental.host_callback import id_tap
         i, stats, state, delta, exp_avg_acceptance, avg_acceptance = carry
-        id_tap(print_func, (i, jnp.mean(delta), jnp.mean(exp_avg_acceptance)))
+        id_tap(print_func, (i,
+                            jnp.min(delta), jnp.max(delta),
+                            jnp.min(exp_avg_acceptance), jnp.max(exp_avg_acceptance),
+                            jnp.min(avg_acceptance), jnp.max(avg_acceptance)))
 
         next_state = kernel_fn(key_inp, state, delta)
-
         next_stats = stats_fn(state.x, next_state.x)
+
         # Exponentially weighted average.
         exp_avg_acceptance = args.beta * next_state.updated + (1. - args.beta) * exp_avg_acceptance
         avg_acceptance = (i * avg_acceptance + 1. * next_state.updated) / (i + 1)
         stats = tree_map(lambda u, v: (i * u + v) / (i + 1), stats, next_stats)
 
         if delta_fn is not None:
-            delta = delta_fn(delta, args.target_alpha, exp_avg_acceptance, args.lr)
+            lr = args.lr * (n_iter - i) / n_iter
+            delta = delta_fn(delta, args.target_alpha, exp_avg_acceptance, lr)
         carry = i + 1, stats, next_state, delta, exp_avg_acceptance, avg_acceptance
         return carry, None
 
@@ -112,6 +124,10 @@ def one_experiment(exp_key):
         init_fn, kernel_fn = get_csmc_kernel(ys, m0, P0, F, Q, b, args.N, args.backward, args.parallel, args.gradient)
         delta_fn = csmc_delta_adaptation
         delta_init = args.delta_init * jnp.ones((args.T,))
+    elif args.style == "csmc-guided":
+        init_fn, kernel_fn = get_guided_csmc_kernel(ys, m0, P0, F, Q, b, args.N, args.backward, args.gradient)
+        delta_fn = csmc_delta_adaptation
+        delta_init = args.delta_init * jnp.ones((args.T,))
     else:
         raise NotImplementedError
 
@@ -130,7 +146,7 @@ def one_experiment(exp_key):
 
 
 with jax.disable_jit(args.debug):
-    with jax.debug_nans(args.debug):
+    with jax.debug_nans(args.debug_nans):
         stats_example, trajectory_example, data_example, init_trajectory, pct_accepted_example, delta_example = one_experiment(
             jax.random.PRNGKey(args.seed))
 
