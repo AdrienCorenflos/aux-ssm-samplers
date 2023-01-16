@@ -9,7 +9,6 @@ from .math.mvn import reflection
 from .rhee_glynn import estimator
 
 
-
 def get_coupled_kernel(dim):
     # A coupled MCMC kernel targeting a N-dim Gaussian distribution with mean 2
     log_pdf = lambda z: -jnp.sum(jnp.abs(z - 2.))

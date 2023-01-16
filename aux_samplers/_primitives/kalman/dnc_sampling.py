@@ -43,7 +43,7 @@ def sampling(key: PRNGKey, ms: Array, Ps: Array, lgssm: LGSSM) -> Array:
 
     # Sample from the last time step
     xs = jnp.zeros_like(ms)
-    chol_T = jnp.linalg.cholesky(Ps[-1])
+    chol_T =jnp.linalg.cholesky(Ps[-1])
     x_T = rvs(key_T, ms[-1], chol_T)
     xs = xs.at[-1].set(x_T)
 
@@ -52,7 +52,7 @@ def sampling(key: PRNGKey, ms: Array, Ps: Array, lgssm: LGSSM) -> Array:
 
     # Sample from x0 | xT
     m0 = E_0T[0] @ x_T + g_0T[0]
-    chol_0T = jnp.linalg.cholesky(L_0T[0])
+    chol_0T =jnp.linalg.cholesky(L_0T[0])
     x0 = rvs(key_0, m0, chol_0T)
     xs = xs.at[0].set(x0)
 
@@ -67,7 +67,7 @@ def sampling(key: PRNGKey, ms: Array, Ps: Array, lgssm: LGSSM) -> Array:
 
 def _sample(key, x1, x2, aux_elem):
     G, Gamma, w, V = aux_elem
-    chol = jnp.linalg.cholesky(V)
+    chol =jnp.linalg.cholesky(V)
     mean = G @ x1 + Gamma @ x2 + w
     out = rvs(key, mean, chol)
     return out

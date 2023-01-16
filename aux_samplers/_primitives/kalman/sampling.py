@@ -84,7 +84,7 @@ def mean_and_chol(F, Q, b, m, P):
 
     inc_m = m - gain @ (F @ m + b)
 
-    L = jnp.linalg.cholesky(inc_Sig)
+    L =jnp.linalg.cholesky(inc_Sig)
     # When there is 0 uncertainty, the Cholesky decomposition is not defined.
     L = jnp.nan_to_num(L)
     return inc_m, L, gain

@@ -1,1 +1,1 @@
-from .generic import get_kernel, delta_adaptation
+from .generic import get_kernel

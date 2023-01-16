@@ -17,30 +17,30 @@ parser = argparse.ArgumentParser("Run a Stochastic volatility experiment")
 # General arguments
 parser.add_argument('--parallel', action='store_true')
 parser.add_argument('--no-parallel', dest='parallel', action='store_false')
-parser.set_defaults(parallel=False)
+parser.set_defaults(parallel=True)
 parser.add_argument('--debug', action='store_true')
 parser.add_argument('--no-debug', dest='debug', action='store_false')
-parser.set_defaults(debug=False)
+parser.set_defaults(debug=True)
 parser.add_argument('--debug-nans', action='store_true')
 parser.add_argument('--no-debug-nans', dest='debug_nans', action='store_false')
 parser.set_defaults(debug_nans=False)
 parser.add_argument('--gpu', action='store_true')
 parser.add_argument('--no-gpu', dest='gpu', action='store_false')
-parser.set_defaults(gpu=False)
+parser.set_defaults(gpu=True)
 
 # Experiment arguments
 parser.add_argument("--n_experiments", dest="n_experiments", type=int, default=1)
-parser.add_argument("--T", dest="T", type=int, default=500)
-parser.add_argument("--D", dest="D", type=int, default=5)
-parser.add_argument("--n-samples", dest="n_samples", type=int, default=5_000)
-parser.add_argument("--burnin", dest="burnin", type=int, default=2_000)
-parser.add_argument("--target-alpha", dest="target_alpha", type=float, default=0.5)
-parser.add_argument("--lr", dest="lr", type=float, default=1.)
-parser.add_argument("--beta", dest="beta", type=int, default=0.05)
-parser.add_argument("--delta-init", dest="delta_init", type=float, default=1e-15)
+parser.add_argument("--T", dest="T", type=int, default=50)
+parser.add_argument("--D", dest="D", type=int, default=30)
+parser.add_argument("--n_samples", dest="n_samples", type=int, default=10_000)
+parser.add_argument("--burnin", dest="burnin", type=int, default=2_500)
+parser.add_argument("--lr", dest="lr", type=float, default=0.25)
+parser.add_argument("--target_alpha", dest="target_alpha", type=float, default=0.5)
+parser.add_argument("--beta", dest="beta", type=float, default=0.05)
+parser.add_argument("--delta_init", dest="delta_init", type=float, default=1e-20)
 parser.add_argument("--seed", dest="seed", type=int, default=1234)
 parser.add_argument("--style", dest="style", type=str, default="kalman")
-parser.add_argument("--gradient", dest="gradient", type=bool, default=True)
+parser.add_argument("--gradient", dest="gradient", type=bool, default=False)
 parser.add_argument("--backward", dest="backward", type=bool, default=True)
 parser.add_argument("--N", dest="N", type=int, default=25)
 
@@ -73,31 +73,29 @@ def loop(key, init_delta, init_state, kernel_fn, delta_fn, n_iter):
     keys = jax.random.split(key, n_iter)
     print_func = lambda z, *_: print(f"\riteration: {z[0]}, "
                                      f"min_delta: {z[1]:.2e}, max_delta: {z[2]:.2e}, "
-                                     f"min_window_accept: {z[3]:.1%},  max_window_accept: {z[4]:.1%}, "
-                                     f"min_accept: {z[5]:.1%}, max_accept: {z[6]:.1%},", end="")
+                                     f"min_expw_accept: {z[3]:.1%},  max_expw_accept: {z[4]:.1%}, "
+                                     f"min_accept: {z[5]:.1%}, min_accept: {z[6]:.1%}", end="")
 
     def body_fn(carry, key_inp):
         from jax.experimental.host_callback import id_tap
-        i, stats, state, delta, window_avg_acceptance, avg_acceptance = carry
+        i, stats, state, delta, exp_avg_acceptance, avg_acceptance = carry
         id_tap(print_func, (i,
                             jnp.min(delta), jnp.max(delta),
-                            jnp.min(window_avg_acceptance), jnp.max(window_avg_acceptance),
-                            jnp.min(avg_acceptance), jnp.max(avg_acceptance),
-                            ), result=None)
+                            jnp.min(exp_avg_acceptance), jnp.max(exp_avg_acceptance),
+                            jnp.min(avg_acceptance), jnp.max(avg_acceptance)))
 
         next_state = kernel_fn(key_inp, state, delta)
         next_stats = stats_fn(state.x, next_state.x)
 
-        # moving average.
+        # Exponentially weighted average.
+        exp_avg_acceptance = args.beta * next_state.updated + (1. - args.beta) * exp_avg_acceptance
         avg_acceptance = (i * avg_acceptance + 1. * next_state.updated) / (i + 1)
-        window_avg_acceptance = args.beta * next_state.updated + (1 - args.beta) * window_avg_acceptance
         stats = tree_map(lambda u, v: (i * u + v) / (i + 1), stats, next_stats)
 
         if delta_fn is not None:
-            lr = (n_iter - i) * args.lr / n_iter
-            delta = delta_fn(delta, args.target_alpha, window_avg_acceptance, lr)
-
-        carry = i + 1, stats, next_state, delta, window_avg_acceptance, avg_acceptance
+            lr = args.lr * (n_iter - i) / n_iter
+            delta = delta_fn(delta, args.target_alpha, exp_avg_acceptance, lr)
+        carry = i + 1, stats, next_state, delta, exp_avg_acceptance, avg_acceptance
         return carry, None
 
     init_stats = stats_fn(init_state.x, init_state.x)
@@ -149,7 +147,6 @@ with jax.disable_jit(args.debug):
             jax.random.PRNGKey(args.seed))
 
 import numpy as np
-
 stats_example = [np.array(s) for s in stats_example]
 trajectory_example = np.array(trajectory_example)
 data_example = np.array(data_example)
@@ -157,15 +154,13 @@ init_trajectory = np.array(init_trajectory)
 pct_accepted_example = np.array(pct_accepted_example)
 delta_example = np.array(delta_example)
 
+print()
+print("pct_accepted: ", pct_accepted_example)
 _, ax = plt.subplots(figsize=(12, 5))
 plt.suptitle("Squared jumping distance averaged across dimensions")
-ax.semilogy(stats_example[0], alpha=0.5)
-ax.semilogy(delta_example, label="Delta", linestyle="--", color="tab:orange")
-twin_ax = ax.twinx()
-twin_ax.plot(pct_accepted_example, label="acceptance probability", color="k")
-twin_ax.set_ylim(0, 1)
-ax.legend()
-twin_ax.legend()
+ax.plot(stats_example[0], alpha=0.5, label="EJSD")
+ax.plot(delta_example, label="Delta", linestyle="--", color="tab:orange")
+ax.twinx().plot(pct_accepted_example, label="acceptance probability", color="k")
 plt.show()
 
 posterior_mean = stats_example[1]
@@ -183,3 +178,81 @@ plt.fill_between(jnp.arange(args.T),
 plt.plot(init_trajectory[:, component], label="initial trajectory", color="k", linestyle="--")
 plt.legend()
 plt.show()
+#
+#
+#
+#
+# @partial(jax.jit, static_argnums=(1,), backend="cpu" if not PARALLEL else "gpu")
+# def experiment(key, M, delta_0, ys):
+#     init_key, burnin_key, sampling_key = jax.random.split(key, 3)
+#
+#     def test_fn(state):
+#         # Trace the state at init, around T/3, 2T/3 and T
+#         x, *_ = state
+#         x = x.reshape(-1)
+#         return x
+#         TT = T * M
+#         idx = np.array([0, TT // 3, 2 * TT // 3, TT - 1],
+#                        dtype=int)
+#         return x[idx]
+#
+#     # Initialise the chain by sampling from the prior
+#     init_x, _ = sample_data(init_key, PARAMS, T, M)
+#     init_x = init_x.reshape(-1, 1)
+#     # init_x = jax.numpy.interp(np.linspace(0, T, T * MM + 1), TRUE_LINSPACE, TRUE_XS)
+#     # init_x = init_x.reshape(-1, 1)
+#
+#     init_fn, step_fn = get_flat_sampler(ys, PARAMS, T, M, PARALLEL, args.style)
+#     init_state = init_fn(init_x)
+#     burnin_runtime, burnin_state, sampling_delta = delta_adaptation(burnin_key, step_fn, init_state, TARGET_ACCEPT,
+#                                                                     delta_0, UPDATE_EVERY, BURNIN, LEARNING_RATE)
+#     pct_accepted, some_samples, sampling_time = routine(sampling_key, step_fn, lambda x: test_fn(x), burnin_state,
+#                                                         sampling_delta, N_SAMPLES)
+#     pct_accepted = pct_accepted
+#
+#     return sampling_delta, pct_accepted, burnin_runtime, sampling_time, some_samples, init_x.reshape(-1)
+#
+#
+# curr_delta = DELTA_0
+# results = []
+#
+# experiment_keys = jax.random.split(JAX_KEY, N_EXPERIMENTS)
+#
+# desc = f"T={T}, style={args.style}, parallel={PARALLEL}. " + "Inner loop: {}, Stats: {}"
+# progress_bar = tqdm.tqdm(MS, desc=desc.format("", ""))
+# for i, MM in enumerate(progress_bar):
+#     for j, experiment_key in enumerate(experiment_keys):
+#         try:
+#             with jax.disable_jit(DEBUG):
+#                 exp_delta, exp_pct_accepted, exp_burnin_time, exp_sampling_time, exp_samples, exp_init = experiment(
+#                     experiment_key, MM, curr_delta, YS)
+#
+#             fig, ax = plt.subplots(figsize=(10, 5))
+#             ax.plot(TRUE_LINSPACE, TRUE_XS, color="tab:blue", label="True")
+#             linspace = np.linspace(0, T, T * MM + 1)
+#             ax.plot(linspace, np.mean(exp_samples, axis=0), color="tab:orange")
+#             ax.plot(linspace, exp_init, color="tab:green")
+#             ax.fill_between(linspace,
+#                             np.quantile(exp_samples, 0.05, axis=0),
+#                             np.quantile(exp_samples, 0.95, axis=0), color="tab:orange", alpha=0.2)
+#             ax.twinx().scatter(np.linspace(0, T, T + 1), YS, color="tab:red")
+#             plt.show()
+#
+#             ess = tfp.mcmc.effective_sample_size(exp_samples, filter_beyond_positive_pairs=False)
+#             plt.scatter(linspace, ess)
+#             plt.show()
+#             results.append([MM, j, exp_delta, exp_pct_accepted, exp_burnin_time, exp_sampling_time, *ess])
+#             progress_bar.set_description_str(
+#                 desc.format(j,
+#                             f"burnin time: {exp_burnin_time:.2f}s, sampling time: {exp_sampling_time:.2f}s, "
+#                             f"pct_accepted: {exp_pct_accepted:.2%}, sampling delta: {exp_delta:.2e}")
+#             )
+#         except MemoryError:  # noqa: This will fail because of some CUDA error. They tend to be a bit random...
+#             results.append([MM, j] + [np.nan] * 8)
+# progress_bar.close()
+#
+# results = pd.DataFrame(results, columns=["M", "experiment", "step-size", "pct_accepted", "burnin_time", "sampling_time",
+#                                          *["ess_" + str(i) for i in range(T * MM)]])
+# results.set_index(["M", "experiment"], inplace=True)
+#
+# results.to_csv(os.path.join(dir_name, file_name), index=True)

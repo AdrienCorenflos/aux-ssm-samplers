@@ -47,6 +47,7 @@ def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Pote
     init: Callable
         Function to initialize the state of the sampler given a trajectory.
     """
+
     # This function uses the classes defined below
     def factory(u, scale):
         if gradient:
@@ -69,6 +70,62 @@ def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Pote
         raise NotImplementedError("Parallel version not implemented yet.")
 
 
+def get_coupled_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int,
+                       backward: bool = False, Pt: Optional[Dynamics] = None, gradient: bool = False,
+                       parallel: bool = False):
+    """
+    Get a coupled local auxiliary kernel with separable proposals.
+
+    Parameters:
+    -----------
+    M0:
+        Initial distribution.
+    G0:
+        Initial potential.
+    Mt:
+        Dynamics of the model.
+    Gt:
+        Potential of the model.
+    N: int
+        Total number of particles to use in the cSMC sampler.
+    backward: bool
+        Whether to perform backward sampling or not. If True, the dynamics must implement a valid logpdf method.
+    Pt:
+        Dynamics of the true model. If None, it is assumed to be the same as Mt.
+    gradient: bool
+        Whether to use the gradient model in the proposal or not.
+    parallel: bool
+        Whether to use the parallel particle Gibbs or not.
+
+    Returns:
+    --------
+    kernel: Callable
+        cSMC kernel.
+    init: Callable
+        Function to initialize the state of the sampler given a trajectory.
+    """
+
+    # This function uses the classes defined below
+    def factory(u, scale):
+        if gradient:
+            grad_pi = jax.grad(_log_pdf)(u, M0, G0, Mt, Gt)
+        else:
+            grad_pi = 0. * u
+        m0 = AuxiliaryM0(u=u[0], sqrt_half_delta=scale[0], grad=grad_pi[0])
+        mt = AuxiliaryMt(params=(u[1:], scale[1:], grad_pi[1:]))
+        if gradient:
+            g0 = GradientAuxiliaryG0(M0=M0, G0=G0, u=u[0], sqrt_half_delta=scale[0], grad=grad_pi[0])
+            gt = GradientAuxiliaryGt(Mt=Mt, Gt=Gt, params=(u[1:], scale[1:], grad_pi[1:]))
+        else:
+            g0 = AuxiliaryG0(M0=M0, G0=G0)
+            gt = AuxiliaryGt(Mt=Mt, Gt=Gt)
+        return m0, g0, mt, gt
+
+    if not parallel:
+        return get_base_kernel(factory, N, backward, Pt)
+    else:
+        raise NotImplementedError("Parallel version not implemented yet.")
+
 
 def _log_pdf(u, M0, G0, Mt, Gt):
     # Compute the log-pdf of the auxiliary variable
@@ -80,10 +137,10 @@ def _log_pdf(u, M0, G0, Mt, Gt):
         out = Gt(u_t_p_1, u_t, Gt_param)
         out += Mt.logpdf(u_t_p_1, u_t, Mt_param)
         return out
+
     fn_out = fn(u[1:], u[:-1], Gt.params, Mt.params)
     log_pdf += jnp.sum(fn_out)
     return log_pdf
-
 
 
 @chex.dataclass
@@ -112,6 +169,7 @@ class AuxiliaryG0(UnivariatePotential):
     def __call__(self, x):
         return self.G0(x) + self.M0.logpdf(x)
 
+
 @chex.dataclass
 class GradientAuxiliaryG0(UnivariatePotential):
     M0: Distribution
@@ -128,9 +186,6 @@ class GradientAuxiliaryG0(UnivariatePotential):
         out += jnp.sum(norm.logpdf(x, self.u, self.sqrt_half_delta), axis=-1)
         out -= jnp.sum(norm.logpdf(x, mean, self.sqrt_half_delta), axis=-1)
         return out
-
-
-
 
 
 @chex.dataclass
@@ -153,6 +208,7 @@ class AuxiliaryGt(Potential):
     def __call__(self, x_t_p_1, x_t, params):
         Mt_params, Gt_params = params
         return self.Mt.logpdf(x_t_p_1, x_t, Mt_params) + self.Gt(x_t_p_1, x_t, Gt_params)
+
 
 @chex.dataclass
 class GradientAuxiliaryGt(Potential):

@@ -7,14 +7,18 @@ import jax
 from chex import Array, Numeric
 from jax import numpy as jnp
 
-from .._primitives.csmc import get_kernel as get_standard_kernel
-from .._primitives.csmc.base import Distribution, UnivariatePotential, Dynamics, Potential, CSMCState
+from .._primitives.base import CoupledSamplerState
+from .._primitives.csmc import get_kernel as get_standard_kernel, get_coupled_kernel as get_standard_coupled_kernel
+from .._primitives.csmc.base import Distribution, UnivariatePotential, Dynamics, Potential, CSMCState, CRNDistribution, \
+    CRNDynamics
+from .._primitives.math.mvn.couplings import lindvall_roger
 
 
-def get_kernel(factory: Callable[[Array, Numeric], Tuple[Distribution, UnivariatePotential,Dynamics, Potential]],
+def get_kernel(factory: Callable[[Array, Numeric], Tuple[Distribution, UnivariatePotential, Dynamics, Potential]],
                N: int,
                backward: bool = False,
-               Pt: Optional[Dynamics] = None):
+               Pt: Optional[Dynamics] = None,
+               coupled: bool = False):
     """
     Get a local auxiliary kernel.
     All factories take as input the current value of the auxiliary variable `u_t` and the value of \sqrt{\delta/2}
@@ -32,7 +36,8 @@ def get_kernel(factory: Callable[[Array, Numeric], Tuple[Distribution, Univariat
         Whether to perform backward sampling or not. If True, the dynamics must implement a valid logpdf method.
     Pt:
         Dynamics of the true model.
-
+    coupled: bool
+        Whether this returns the coupled version of the kernel or not.
     Returns
     -------
     kernel: Callable
@@ -46,6 +51,16 @@ def get_kernel(factory: Callable[[Array, Numeric], Tuple[Distribution, Univariat
     elif backward and not hasattr(Pt, "logpdf"):
         raise ValueError("`Pt` must implement a valid logpdf method.")
 
+    if not coupled:
+        return _get_kernel(factory, N, backward, Pt)
+    else:
+        return _get_coupled_kernel(factory, N, backward, Pt)
+
+
+def _get_kernel(factory: Callable[[Array, Numeric], Tuple[Distribution, UnivariatePotential, Dynamics, Potential]],
+                N: int,
+                backward: bool,
+                Pt: Dynamics):
     def kernel(key, state, delta):
         # Housekeeping
         x = state.x
@@ -72,30 +87,46 @@ def get_kernel(factory: Callable[[Array, Numeric], Tuple[Distribution, Univariat
     return init, kernel
 
 
+def _get_coupled_kernel(
+        factory: Callable[[Array, Numeric], Tuple[Distribution, UnivariatePotential, Dynamics, Potential]],
+        N: int,
+        backward: bool,
+        Pt: Dynamics):
+    def kernel(key, state: CoupledSamplerState, delta):
+        # Housekeeping
+        state_1, state_2 = state.state_1, state.state_2
+        x_1, x_2 = state_1.x, state_2.x
+        T = x_1.shape[0]
 
-def delta_adaptation(delta, target_rate, acceptance_rate, adaptation_rate, min_delta=1e-20):
-    """
-    A simple adaptation rule for the delta parameter of the auxiliary Kalman sampler.
+        sqrt_half_delta = jnp.sqrt(0.5 * delta)
+        if jnp.ndim(sqrt_half_delta) == 0:
+            sqrt_half_delta = sqrt_half_delta * jnp.ones((T,))
+        auxiliary_key, key = jax.random.split(key)
 
-    Parameters
-    ----------
-    delta: Array
-        Current value of delta per time step.
-    target_rate: float
-        Target acceptance rate.
-    acceptance_rate: float
-        Current average acceptance rate.
-    adaptation_rate: float
-        Adaptation rate.
-    min_delta: float
-        Minimum value of delta.
+        # Auxiliary observations
+        mvn_coupling = lambda k, a, b: lindvall_roger(k, a, b, sqrt_half_delta, sqrt_half_delta)
+        aux_keys = jax.random.split(auxiliary_key, T)
+        u_1, u_2, _ = jax.vmap(mvn_coupling)(aux_keys, x_1, x_2)
 
-    Returns
-    -------
-    delta: Array
-        Adapted value of delta.
+        m0_1, g0_1, mt_1, gt_1 = factory(u_1, sqrt_half_delta)
+        m0_2, g0_2, mt_2, gt_2 = factory(u_2, sqrt_half_delta)
 
-    """
+        cm0 = CRNDistribution(dist_1=m0_1, dist_2=m0_2)
+        cmt = CRNDynamics(dynamics_1=mt_1, dynamics_2=mt_2)
 
-    out = delta * jnp.exp(adaptation_rate * (acceptance_rate - target_rate))
-    return jnp.maximum(out, min_delta)
+        _, auxiliary_kernel = get_standard_coupled_kernel(cm0, g0_1, g0_2, cmt, gt_1, gt_2, N, backward=backward,
+                                                          Pt_1=Pt, Pt_2=Pt)
+        return auxiliary_kernel(key, state)
+
+
+
+    def init(x_star_1, x_star_2):
+        T, *_ = x_star_1.shape
+        ancestors = jnp.zeros((T,), dtype=jnp.int_)
+        state_1 = CSMCState(x=x_star_1, updated=ancestors != 0)
+        state_2 = CSMCState(x=x_star_2, updated=ancestors != 0)
+        coupled_state = CoupledSamplerState(state_1=state_1, state_2=state_2,
+                                            flags=jnp.zeros((T,), dtype=jnp.bool_))
+        return coupled_state
+
+    return init, kernel

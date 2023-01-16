@@ -16,7 +16,7 @@ from ..math.utils import normalize
 
 def get_coupled_kernel(cM0: CoupledDistribution, G0_1: UnivariatePotential, G0_2: UnivariatePotential,
                        cMt: CoupledDynamics, Gt_1: Potential, Gt_2: Potential, N: int,
-                       backward: bool = False, Pt: Optional[Dynamics] = None):
+                       backward: bool = False, Pt_1: Optional[Dynamics] = None, Pt_2: Optional[Dynamics] = None):
     """
     Get a coupled cSMC kernel.
 
@@ -34,7 +34,7 @@ def get_coupled_kernel(cM0: CoupledDistribution, G0_1: UnivariatePotential, G0_2
         Total number of particles to use in the cSMC sampler.
     backward: bool
         Whether to perform backward sampling or not. If True, the dynamics must implement a valid logpdf method.
-    Pt:
+    Pt_1, Pt_2: Optional[Dynamics]
         Dynamics of the true model. If None, it is assumed to be the same as Mt.
     Returns:
     --------
@@ -44,10 +44,10 @@ def get_coupled_kernel(cM0: CoupledDistribution, G0_1: UnivariatePotential, G0_2
         Function to initialize the state of the sampler given a trajectory.
     """
 
-    if backward and Pt is None:
-        raise ValueError("If `backward` is True, `Pt` must be specified.")
+    if backward and (Pt_1 is None or Pt_2 is None):
+        raise ValueError("If `backward` is True, `Pt_1` and `Pt_2` must be specified.")
 
-    def kernel(key, coupled_state):
+    def kernel(key, coupled_state:CoupledSamplerState):
         key_fwd, key_bwd = jax.random.split(key)
         state_1, state_2, coupled_flags = coupled_state.state_1, coupled_state.state_2, coupled_state.flags
         w_1_T, xs_1, log_ws_1, As_1, w_2_T, xs_2, log_ws_2, As_2, coupled_flags = _ccsmc(key_fwd,
@@ -62,7 +62,7 @@ def get_coupled_kernel(cM0: CoupledDistribution, G0_1: UnivariatePotential, G0_2
                                                                                                 xs_1, xs_2, As_1, As_2,
                                                                                                 coupled_flags)
         else:
-            x_1, ancestors_1, x_2, ancestors_2, coupled_flags = _coupled_backward_sampling_pass(key_bwd, Pt, w_1_T,
+            x_1, ancestors_1, x_2, ancestors_2, coupled_flags = _coupled_backward_sampling_pass(key_bwd, Pt_1, Pt_2, w_1_T,
                                                                                                 w_2_T, xs_1, xs_2,
                                                                                                 log_ws_1, log_ws_2,
                                                                                                 coupled_flags)
@@ -179,7 +179,7 @@ def _coupled_backward_scanning_pass(key, w_1_T, w_2_T, xs_1, xs_2, As_1, As_2, c
     return xs_1[::-1], Bs_1[::-1], xs_2[::-1], Bs_2[::-1], coupled_flags[::-1]
 
 
-def _coupled_backward_sampling_pass(key, Pt: Dynamics, w_1_T, w_2_T, xs_1, xs_2, log_ws_1, log_ws_2, coupled_flags):
+def _coupled_backward_sampling_pass(key, Pt_1: Dynamics, Pt_2:Dynamics, w_1_T, w_2_T, xs_1, xs_2, log_ws_1, log_ws_2, coupled_flags):
     """JAX implementation of the coupled backward sampling pass."""
     T = xs_1.shape[0]
     keys = jax.random.split(key, T)
@@ -190,9 +190,9 @@ def _coupled_backward_sampling_pass(key, Pt: Dynamics, w_1_T, w_2_T, xs_1, xs_2,
 
     def body(carry, inp):
         x_1_t, x_2_t = carry
-        op_key, xs_1_t_m_1, log_w_1_t_m_1, xs_2_t_m_1, log_w_2_t_m_1, Pt_m_1_params = inp
-        log_w_1 = Pt.logpdf(x_1_t, xs_1_t_m_1, Pt_m_1_params) + log_w_1_t_m_1
-        log_w_2 = Pt.logpdf(x_2_t, xs_2_t_m_1, Pt_m_1_params) + log_w_2_t_m_1
+        op_key, xs_1_t_m_1, log_w_1_t_m_1, xs_2_t_m_1, log_w_2_t_m_1, Pt_1_m_1_params, Pt_2_m_1_params = inp
+        log_w_1 = Pt_1.logpdf(x_1_t, xs_1_t_m_1, Pt_1_m_1_params) + log_w_1_t_m_1
+        log_w_2 = Pt_2.logpdf(x_2_t, xs_2_t_m_1, Pt_2_m_1_params) + log_w_2_t_m_1
         w_1, w_2 = normalize(log_w_1), normalize(log_w_2)
         B_1_t_m_1, B_2_t_m_1, coupled_index_t_m_1 = index_max_coupling(op_key, w_1, w_2, 1)
         x_1_t_m_1, x_2_t_m_1 = xs_1_t_m_1[B_1_t_m_1], xs_2_t_m_1[B_2_t_m_1]
@@ -202,7 +202,7 @@ def _coupled_backward_sampling_pass(key, Pt: Dynamics, w_1_T, w_2_T, xs_1, xs_2,
         save = (x_1_t_m_1, B_1_t_m_1, x_2_t_m_1, B_2_t_m_1, coupled_t_m_1)
         return next_carry, save
 
-    Mt_params = tree_map(lambda x: x[::-1], Pt.params)
+    Mt_params = tree_map(lambda x: x[::-1], Pt_1.params, Pt_2.params)
 
     # xs[-2::-1] is the reversed list of xs[:-1], I know, not readable...
     _, scanned_out = jax.lax.scan(body, (x_1_T, x_2_T),

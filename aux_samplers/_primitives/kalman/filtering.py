@@ -88,7 +88,7 @@ def sequential_update_one(y, m, P, H, c, R):
     y_diff = y - y_hat
     S = R + H @ P @ H.T
 
-    chol_S = jnp.linalg.cholesky(S)
+    chol_S =jnp.linalg.cholesky(S)
     ell_inc = logpdf(y, y_hat, chol_S)
     G = cho_solve((chol_S, True), H @ P).T
     m = m + G @ y_diff

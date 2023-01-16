@@ -7,6 +7,8 @@ from jax import numpy as jnp
 from jax.scipy.linalg import solve_triangular, eigh
 from jaxtyping import Float, Array
 
+_MIN_LOGPDF = -300
+_MAX_LOGPDF = 300
 
 @partial(jnp.vectorize, signature="(n),(n),(n,n)->()")
 def logpdf(
@@ -45,11 +47,10 @@ def logpdf(
 
     y = solve_triangular(chol, x - m, lower=True)
 
-    diag = jnp.abs(jnp.diag(chol))
-    normalizing_constant = jnp.sum(jnp.log(diag)) + 0.5 * dim * math.log(2 * math.pi)
+    normalizing_constant = tril_log_det(chol) + 0.5 * dim * math.log(2 * math.pi)
     norm_y = jnp.sum(y * y)
 
-    return -0.5 * norm_y - normalizing_constant
+    return jnp.clip(-0.5 * norm_y - normalizing_constant, _MIN_LOGPDF, _MAX_LOGPDF)
 
 
 def rvs(key: PRNGKey, m: Float[Array, "dim"], chol: Float[Array, "dim dim"]) -> Float[Array, "dim"]:

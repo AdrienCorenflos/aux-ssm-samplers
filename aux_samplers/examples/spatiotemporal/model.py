@@ -12,9 +12,7 @@ def get_data(key, nu, phi, tau, rho, dim, T):
 
     init_key, sampling_key = jax.random.split(key)
 
-    chol_P0 = jnp.linalg.cholesky(P0)
-    chol_Q = jnp.linalg.cholesky(Q)
-    x0 = m0 + chol_P0 @ jax.random.normal(init_key, (dim,))
+    x0 = jax.random.multivariate_normal(init_key, m0, P0)
 
     def body(x_k, key_k):
         state_key, observation_key = jax.random.split(key_k)
@@ -22,7 +20,7 @@ def get_data(key, nu, phi, tau, rho, dim, T):
         observation_scale = jnp.exp(0.5 * x_k)
 
         y_k = observation_scale * jax.random.normal(observation_key, shape=(dim,))
-        x_kp1 = F @ x_k + b + chol_Q @ jax.random.normal(state_key, shape=(dim,))
+        x_kp1 = jax.random.multivariate_normal(key_k, F @ x_k + b, Q)
         return x_kp1, (x_k, y_k)
 
     _, (xs, ys) = jax.lax.scan(body, x0, jax.random.split(sampling_key, T))
@@ -58,3 +56,6 @@ def log_potential(xs, ys):
     vals = norm.logpdf(ys, scale=scale)
     vals = jnp.nan_to_num(vals)  # in case the scale is infinite, we get nan, but we want 0
     return jnp.sum(vals)
+
+
+

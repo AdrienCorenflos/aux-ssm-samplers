@@ -12,8 +12,8 @@ from ..math.mvn import rejection, thorisson, modified_lindvall_roger
 _EPS = 0.01  # this is a small float to make sure that log2(2**k) = k exactly
 
 
-
 # Wrapper for progressive and divide and conquer
+# noinspection PyIncorrectDocstring
 def sampling(key: PRNGKey, lgssm_1: LGSSM, lgssm_2: LGSSM, ms_1, Ps_1, ms_2, Ps_2, parallel,
              method: str = "rejection", **coupling_params):
     """
@@ -229,7 +229,7 @@ def divide_and_conquer(key: PRNGKey, lgssm_1: LGSSM, lgssm_2: LGSSM, ms_1, Ps_1,
     xs_1, xs_2, are_coupled = jax.tree_util.tree_map(lambda z, y: z.at[0].set(y), (xs_1, xs_2, are_coupled),
                                                      (x0_1, x0_2, x0_coupled))
 
-    # Loop over the tree in reverse order to sample from the mid points conditionally on the parents
+    # Loop over the tree in reverse order to sample from the mid-points conditionally on the parents
     for aux_1, aux_2, idx_left, idx, idx_right in zip(aux_tree_1, aux_tree_2, left_parents, to_sample, right_parents):
         key, subkey = jax.random.split(key)
         sampling_keys = jax.random.split(subkey, idx.shape[0])

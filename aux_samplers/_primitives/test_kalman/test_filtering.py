@@ -18,7 +18,7 @@ def jax_config():
 @pytest.mark.parametrize("T", [3, 5])
 @pytest.mark.parametrize("dx", [1, 2])
 @pytest.mark.parametrize("dy", [1, 3])
-@pytest.mark.parametrize("_parallel", [True, False])
+@pytest.mark.parametrize("parallel", [True, False])
 def test_parallel_vs_sequential(seed, T, dx, dy, parallel):
     np.random.seed(seed)
 

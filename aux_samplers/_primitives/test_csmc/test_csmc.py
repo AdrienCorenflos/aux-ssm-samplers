@@ -1,5 +1,3 @@
-from functools import partial
-
 import jax
 import numpy as np
 import numpy.testing as npt
@@ -148,7 +146,7 @@ def test_coupled_csmc(backward):
     Mt = GaussianDynamics(rho=RHO)
     cMt = CRNDynamics(dynamics_1=Mt, dynamics_2=Mt)
 
-    init, kernel = get_coupled_kernel(cM0, G0, G0, cMt, Gt, Gt, N=N, backward=False, Pt=Mt)
+    init, kernel = get_coupled_kernel(cM0, G0, G0, cMt, Gt, Gt, N=N, backward=False, Pt_1=Mt, Pt_2=Mt)
 
     x0_1, x0_2 = jax.random.normal(init_key, (2, T, 1))
     init_state = init(x0_1, x0_2)
