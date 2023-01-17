@@ -2,7 +2,7 @@ import argparse
 
 import jax
 import jax.numpy as jnp
-import matplotlib.pyplot as plt
+import numpy as np
 from jax.tree_util import tree_map
 
 from aux_samplers.common import delta_adaptation
@@ -27,12 +27,15 @@ parser.set_defaults(debug_nans=False)
 parser.add_argument('--gpu', action='store_true')
 parser.add_argument('--no-gpu', dest='gpu', action='store_false')
 parser.set_defaults(gpu=False)
+parser.add_argument('--verbose', action='store_true')
+parser.add_argument('--no-verbose', dest='verbose', action='store_false')
+parser.set_defaults(verbose=False)
 
 # Experiment arguments
-parser.add_argument("--n_experiments", dest="n_experiments", type=int, default=1)
+parser.add_argument("--n-experiments", dest="n_experiments", type=int, default=50)
 parser.add_argument("--T", dest="T", type=int, default=100)
 parser.add_argument("--D", dest="D", type=int, default=5)
-parser.add_argument("--n-samples", dest="n_samples", type=int, default=5_000)
+parser.add_argument("--n-samples", dest="n_samples", type=int, default=30_000)
 parser.add_argument("--burnin", dest="burnin", type=int, default=2_000)
 parser.add_argument("--target-alpha", dest="target_alpha", type=float, default=0.5)
 parser.add_argument("--lr", dest="lr", type=float, default=1.)
@@ -40,7 +43,7 @@ parser.add_argument("--beta", dest="beta", type=int, default=0.05)
 parser.add_argument("--delta-init", dest="delta_init", type=float, default=1e-15)
 parser.add_argument("--seed", dest="seed", type=int, default=1234)
 parser.add_argument("--style", dest="style", type=str, default="kalman")
-parser.add_argument("--gradient", dest="gradient", type=bool, default=True)
+parser.add_argument("--gradient", dest="gradient", type=bool, default=False)
 parser.add_argument("--backward", dest="backward", type=bool, default=True)
 parser.add_argument("--N", dest="N", type=int, default=25)
 
@@ -65,13 +68,15 @@ if args.style != "kalman":
 # STATS FN
 def stats_fn(x_1, x_2):
     # squared jumping distance averaged across dimensions, and first and second moments
-    return (x_2 - x_1) ** 2, x_2, x_2 ** 2
+    return jnp.mean((x_2 - x_1) ** 2, -1), x_2, x_2 ** 2
 
 
 # KERNEL
-def loop(key, init_delta, init_state, kernel_fn, delta_fn, n_iter):
+def loop(key, init_delta, init_state, kernel_fn, delta_fn, n_iter, ):
+    from datetime import datetime
     keys = jax.random.split(key, n_iter)
-    print_func = lambda z, *_: print(f"\riteration: {z[0]}, "
+
+    print_func = lambda z, *_: print(f"\riteration: {z[0]}, current time: {datetime.now().strftime('%H:%M:%S')}, "
                                      f"min_delta: {z[1]:.2e}, max_delta: {z[2]:.2e}, "
                                      f"min_window_accept: {z[3]:.1%},  max_window_accept: {z[4]:.1%}, "
                                      f"min_accept: {z[5]:.1%}, max_accept: {z[6]:.1%},", end="")
@@ -79,11 +84,12 @@ def loop(key, init_delta, init_state, kernel_fn, delta_fn, n_iter):
     def body_fn(carry, key_inp):
         from jax.experimental.host_callback import id_tap
         i, stats, state, delta, window_avg_acceptance, avg_acceptance = carry
-        id_tap(print_func, (i,
-                            jnp.min(delta), jnp.max(delta),
-                            jnp.min(window_avg_acceptance), jnp.max(window_avg_acceptance),
-                            jnp.min(avg_acceptance), jnp.max(avg_acceptance),
-                            ), result=None)
+        if args.verbose:
+            id_tap(print_func, (i,
+                                jnp.min(delta), jnp.max(delta),
+                                jnp.min(window_avg_acceptance), jnp.max(window_avg_acceptance),
+                                jnp.min(avg_acceptance), jnp.max(avg_acceptance),
+                                ), result=None)
 
         next_state = kernel_fn(key_inp, state, delta)
         next_stats = stats_fn(state.x, next_state.x)
@@ -143,43 +149,34 @@ def one_experiment(exp_key):
     return stats, true_xs, ys, xs_init, pct_accepted, burnin_delta
 
 
-with jax.disable_jit(args.debug):
-    with jax.debug_nans(args.debug_nans):
-        stats_example, trajectory_example, data_example, init_trajectory, pct_accepted_example, delta_example = one_experiment(
-            jax.random.PRNGKey(args.seed))
+def full_experiment():
+    import time
+    keys = jax.random.split(jax.random.PRNGKey(args.seed), args.n_experiments)
 
-import numpy as np
+    ejsd_per_key = np.empty((args.n_experiments, args.T))
+    acceptance_rate_per_key = np.empty((args.n_experiments, args.T))
+    delta_per_key = np.empty((args.n_experiments, args.T))
+    time_per_key = np.empty((args.n_experiments,))
+    for i in range(args.n_experiments):
+        start = time.time()
+        (esjd, *_), _, _, _, pct_accepted, burnin_delta = one_experiment(keys[i])
 
-stats_example = [np.array(s) for s in stats_example]
-trajectory_example = np.array(trajectory_example)
-data_example = np.array(data_example)
-init_trajectory = np.array(init_trajectory)
-pct_accepted_example = np.array(pct_accepted_example)
-delta_example = np.array(delta_example)
+        ejsd_per_key[i, :] = esjd.block_until_ready()
+        acceptance_rate_per_key[i, :] = pct_accepted
+        delta_per_key[i, :] = burnin_delta
+        time_per_key[i] = time.time() - start
+    return ejsd_per_key, acceptance_rate_per_key, delta_per_key, time_per_key
 
-_, ax = plt.subplots(figsize=(12, 5))
-plt.suptitle("Squared jumping distance averaged across dimensions")
-ax.semilogy(stats_example[0], alpha=0.5)
-ax.semilogy(delta_example, label="Delta", linestyle="--", color="tab:orange")
-twin_ax = ax.twinx()
-twin_ax.plot(pct_accepted_example, label="acceptance probability", color="k")
-twin_ax.set_ylim(0, 1)
-ax.legend()
-twin_ax.legend()
-plt.show()
 
-posterior_mean = stats_example[1]
-posterior_var = stats_example[2] - stats_example[1] ** 2
-posterior_std = jnp.sqrt(posterior_var)
+def main():
+    ejsd_per_key, acceptance_rate_per_key, delta_per_key, time_per_key = full_experiment()
+    file_name = f"results/{args.style}-{args.D}-{args.T}-{args.N}-{args.parallel}-{args.gradient}.npz"
+    np.savez(file_name,
+             ejsd_per_key=ejsd_per_key,
+             acceptance_rate_per_key=acceptance_rate_per_key,
+             delta_per_key=delta_per_key,
+             time_per_key=time_per_key)
 
-component = -1
-plt.figure(figsize=(12, 5))
-plt.suptitle("One trajectory posterior")
-plt.plot(trajectory_example[:, component], label="true trajectory")
-plt.plot(posterior_mean[:, component], label="posterior mean", color="tab:orange")
-plt.fill_between(jnp.arange(args.T),
-                 posterior_mean[:, component] - 2 * posterior_std[:, component],
-                 posterior_mean[:, component] + 2 * posterior_std[:, component], alpha=0.5, color="tab:orange")
-plt.plot(init_trajectory[:, component], label="initial trajectory", color="k", linestyle="--")
-plt.legend()
-plt.show()
+if __name__ == "__main__":
+    main()
+
