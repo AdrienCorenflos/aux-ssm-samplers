@@ -24,6 +24,7 @@ setuptools.setup(
         "jax>=0.3.25",
         "jaxlib>=0.3.25",
         "jaxtyping>=0.2.8",
+        "matplotlib>=3.6.3"
         "statsmodels>=0.13.5",
         "tensorflow_probability>=0.19.0",
         "tqdm>=4.64.1",
