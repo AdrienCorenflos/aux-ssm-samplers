@@ -10,6 +10,7 @@ from auxiliary_csmc import get_kernel as get_csmc_kernel
 from auxiliary_guided_csmc import get_kernel as get_guided_csmc_kernel
 from auxiliary_kalman import get_kernel as get_kalman_kernel
 from model import get_data, get_dynamics
+import tqdm.auto as tqdm
 
 # ARGS PARSING
 
@@ -32,7 +33,7 @@ parser.add_argument('--no-verbose', dest='verbose', action='store_false')
 parser.set_defaults(verbose=False)
 
 # Experiment arguments
-parser.add_argument("--n-experiments", dest="n_experiments", type=int, default=50)
+parser.add_argument("--n-experiments", dest="n_experiments", type=int, default=25)
 parser.add_argument("--T", dest="T", type=int, default=100)
 parser.add_argument("--D", dest="D", type=int, default=5)
 parser.add_argument("--n-samples", dest="n_samples", type=int, default=30_000)
@@ -157,7 +158,7 @@ def full_experiment():
     acceptance_rate_per_key = np.empty((args.n_experiments, args.T))
     delta_per_key = np.empty((args.n_experiments, args.T))
     time_per_key = np.empty((args.n_experiments,))
-    for i in range(args.n_experiments):
+    for i in tqdm.trange(args.n_experiments, desc=f"Style: {args.style}, T: {args.T}, N: {args.N}, D: {args.D},"):
         start = time.time()
         (esjd, *_), _, _, _, pct_accepted, burnin_delta = one_experiment(keys[i])
 
