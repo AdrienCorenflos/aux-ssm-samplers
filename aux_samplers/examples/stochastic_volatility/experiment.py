@@ -30,7 +30,7 @@ parser.set_defaults(gpu=False)
 
 # Experiment arguments
 parser.add_argument("--n_experiments", dest="n_experiments", type=int, default=1)
-parser.add_argument("--T", dest="T", type=int, default=500)
+parser.add_argument("--T", dest="T", type=int, default=100)
 parser.add_argument("--D", dest="D", type=int, default=5)
 parser.add_argument("--n-samples", dest="n_samples", type=int, default=5_000)
 parser.add_argument("--burnin", dest="burnin", type=int, default=2_000)

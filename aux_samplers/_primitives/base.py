@@ -15,7 +15,7 @@ class SamplerState:
 class CoupledSamplerState:
     state_1: SamplerState
     state_2: SamplerState
-    flags: Union[bool, Array] = False
+    flags: Array
 
     @property
     def is_coupled(self):
