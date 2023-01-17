@@ -65,12 +65,15 @@ def get_kernel(dynamics_factory,
     """
     if not coupled:
         return _get_kernel(dynamics_factory, observations_factory, log_likelihood_fn, parallel)
+    else:
+        return _get_coupled_kernel(dynamics_factory, observations_factory, log_likelihood_fn, parallel, **coupled_kwargs)
 
 
 def _get_kernel(dynamics_factory,
                 observations_factory,
                 log_likelihood_fn,
                 parallel):
+
     def kernel(key, state, delta):
         # Housekeeping
         x = state.x

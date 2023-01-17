@@ -3,6 +3,7 @@ import argparse
 import jax
 import jax.numpy as jnp
 import numpy as np
+import tqdm.auto as tqdm
 from jax.tree_util import tree_map
 
 from aux_samplers.common import delta_adaptation
@@ -10,7 +11,6 @@ from auxiliary_csmc import get_kernel as get_csmc_kernel
 from auxiliary_guided_csmc import get_kernel as get_guided_csmc_kernel
 from auxiliary_kalman import get_kernel as get_kalman_kernel
 from model import get_data, get_dynamics
-import tqdm.auto as tqdm
 
 # ARGS PARSING
 
@@ -33,19 +33,23 @@ parser.add_argument('--no-verbose', dest='verbose', action='store_false')
 parser.set_defaults(verbose=False)
 
 # Experiment arguments
-parser.add_argument("--n-experiments", dest="n_experiments", type=int, default=25)
-parser.add_argument("--T", dest="T", type=int, default=100)
+parser.add_argument("--n-experiments", dest="n_experiments", type=int, default=10)
+parser.add_argument("--T", dest="T", type=int, default=50)
 parser.add_argument("--D", dest="D", type=int, default=5)
-parser.add_argument("--n-samples", dest="n_samples", type=int, default=30_000)
-parser.add_argument("--burnin", dest="burnin", type=int, default=2_000)
+parser.add_argument("--n-samples", dest="n_samples", type=int, default=10_000)
+parser.add_argument("--burnin", dest="burnin", type=int, default=2_500)
 parser.add_argument("--target-alpha", dest="target_alpha", type=float, default=0.5)
 parser.add_argument("--lr", dest="lr", type=float, default=1.)
-parser.add_argument("--beta", dest="beta", type=int, default=0.05)
-parser.add_argument("--delta-init", dest="delta_init", type=float, default=1e-15)
+parser.add_argument("--beta", dest="beta", type=int, default=0.1)
+parser.add_argument("--delta-init", dest="delta_init", type=float, default=1e-10)
 parser.add_argument("--seed", dest="seed", type=int, default=1234)
-parser.add_argument("--style", dest="style", type=str, default="kalman")
-parser.add_argument("--gradient", dest="gradient", type=bool, default=False)
-parser.add_argument("--backward", dest="backward", type=bool, default=True)
+parser.add_argument("--style", dest="style", type=str, default="kalman-2")
+parser.add_argument("--gradient", action='store_true')
+parser.add_argument('--no-gradient', dest='gradient', action='store_false')
+parser.set_defaults(gradient=False)
+parser.add_argument("--backward", action='store_true')
+parser.add_argument('--no-backward', dest='backward', action='store_false')
+parser.set_defaults(backward=True)
 parser.add_argument("--N", dest="N", type=int, default=25)
 
 args = parser.parse_args()
@@ -73,7 +77,7 @@ def stats_fn(x_1, x_2):
 
 
 # KERNEL
-def loop(key, init_delta, init_state, kernel_fn, delta_fn, n_iter, ):
+def loop(key, init_delta, init_state, kernel_fn, delta_fn, n_iter, verbose=False):
     from datetime import datetime
     keys = jax.random.split(key, n_iter)
 
@@ -85,7 +89,7 @@ def loop(key, init_delta, init_state, kernel_fn, delta_fn, n_iter, ):
     def body_fn(carry, key_inp):
         from jax.experimental.host_callback import id_tap
         i, stats, state, delta, window_avg_acceptance, avg_acceptance = carry
-        if args.verbose:
+        if verbose:
             id_tap(print_func, (i,
                                 jnp.min(delta), jnp.max(delta),
                                 jnp.min(window_avg_acceptance), jnp.max(window_avg_acceptance),
@@ -115,7 +119,7 @@ def loop(key, init_delta, init_state, kernel_fn, delta_fn, n_iter, ):
 
 
 @jax.jit
-def one_experiment(exp_key):
+def one_experiment(exp_key, verbose=args.verbose):
     # DATA
     data_key, init_key, burnin_key, sample_key = jax.random.split(exp_key, 4)
     true_xs, ys = get_data(data_key, NU, PHI, TAU, RHO, args.D, args.T)
@@ -124,8 +128,11 @@ def one_experiment(exp_key):
     xs_init, _ = get_data(init_key, NU, PHI, TAU, RHO, args.D, args.T)
 
     # KERNEL
-    if args.style == "kalman":
-        init_fn, kernel_fn = get_kalman_kernel(ys, m0, P0, F, Q, b, args.parallel)
+    if args.style == "kalman-1":
+        init_fn, kernel_fn = get_kalman_kernel(ys, m0, P0, F, Q, b, args.parallel, order=1)
+        delta_init = args.delta_init
+    elif args.style == "kalman-2":
+        init_fn, kernel_fn = get_kalman_kernel(ys, m0, P0, F, Q, b, args.parallel, order=2)
         delta_init = args.delta_init
     elif args.style == "csmc":
         init_fn, kernel_fn = get_csmc_kernel(ys, m0, P0, F, Q, b, args.N, args.backward, args.parallel, args.gradient)
@@ -144,9 +151,11 @@ def one_experiment(exp_key):
                                                                       init_state,
                                                                       kernel_fn,
                                                                       delta_adaptation,
-                                                                      args.burnin)
+                                                                      args.burnin,
+                                                                      verbose)
 
-    _, stats, _, _, _, pct_accepted = loop(sample_key, burnin_delta, burnin_state, kernel_fn, None, args.n_samples)
+    _, stats, _, _, _, pct_accepted = loop(sample_key, burnin_delta, burnin_state, kernel_fn, None, args.n_samples,
+                                           verbose)
     return stats, true_xs, ys, xs_init, pct_accepted, burnin_delta
 
 
@@ -154,11 +163,12 @@ def full_experiment():
     import time
     keys = jax.random.split(jax.random.PRNGKey(args.seed), args.n_experiments)
 
-    ejsd_per_key = np.empty((args.n_experiments, args.T))
-    acceptance_rate_per_key = np.empty((args.n_experiments, args.T))
-    delta_per_key = np.empty((args.n_experiments, args.T))
-    time_per_key = np.empty((args.n_experiments,))
-    for i in tqdm.trange(args.n_experiments, desc=f"Style: {args.style}, T: {args.T}, N: {args.N}, D: {args.D},"):
+    ejsd_per_key = np.ones((args.n_experiments, args.T)) * np.nan
+    acceptance_rate_per_key = np.ones((args.n_experiments, args.T)) * np.nan
+    delta_per_key = np.ones((args.n_experiments, args.T)) * np.nan
+    time_per_key = np.ones((args.n_experiments,)) * np.nan
+    for i in tqdm.trange(args.n_experiments,
+                         desc=f"Style: {args.style}, T: {args.T}, N: {args.N}, D: {args.D}, gpu: {args.gpu}"):
         start = time.time()
         (esjd, *_), _, _, _, pct_accepted, burnin_delta = one_experiment(keys[i])
 
@@ -166,18 +176,34 @@ def full_experiment():
         acceptance_rate_per_key[i, :] = pct_accepted
         delta_per_key[i, :] = burnin_delta
         time_per_key[i] = time.time() - start
+        # try:
+        #     start = time.time()
+        #     (esjd, *_), _, _, _, pct_accepted, burnin_delta = one_experiment(keys[i])
+        #
+        #     ejsd_per_key[i, :] = esjd.block_until_ready()
+        #     acceptance_rate_per_key[i, :] = pct_accepted
+        #     delta_per_key[i, :] = burnin_delta
+        #     time_per_key[i] = time.time() - start
+        # except:  # noqa
+        #     continue
+
     return ejsd_per_key, acceptance_rate_per_key, delta_per_key, time_per_key
 
 
 def main():
-    ejsd_per_key, acceptance_rate_per_key, delta_per_key, time_per_key = full_experiment()
+    import os
+    with jax.disable_jit(args.debug):
+        with jax.debug_nans(args.debug_nans):
+            ejsd_per_key, acceptance_rate_per_key, delta_per_key, time_per_key = full_experiment()
     file_name = f"results/{args.style}-{args.D}-{args.T}-{args.N}-{args.parallel}-{args.gradient}.npz"
+    if not os.path.isdir("results"):
+        os.mkdir("results")
     np.savez(file_name,
              ejsd_per_key=ejsd_per_key,
              acceptance_rate_per_key=acceptance_rate_per_key,
              delta_per_key=delta_per_key,
              time_per_key=time_per_key)
 
+
 if __name__ == "__main__":
     main()
-

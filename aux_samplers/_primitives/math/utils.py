@@ -3,6 +3,7 @@ from functools import partial
 
 import jax
 import jax.numpy as jnp
+from jax.scipy.linalg import svd
 
 LOG_HALF = math.log(0.5)
 
@@ -40,28 +41,28 @@ def normalize(log_weights):
     return weights
 
 
-# @partial(jnp.vectorize, signature="(d,d)->(d,d)")
-# def cholesky(P):
-#     """
-#     A wrapper for cholesky that handles numerical issues when P is too close to being 0.
-#
-#     Parameters
-#     ----------
-#     P : Array
-#         A (supposedly) positive definite matrix.
-#
-#     Returns
-#     -------
-#     L : Array
-#         Cholesky decomposition of P.
-#     """
-#
-#     is_gpu = "gpu" in jax.default_backend()
-#
-#     if is_gpu:
-#         u, s, vh = jnp.linalg.svd(P, hermitian=True)
-#         s = jnp.maximum(s, 0.)
-#         P = (u * s[:, None]) @ vh
-#         P = 0.5 * (P + P.T)
-#     chol_P = jnp.linalg.cholesky(P)
-#     return chol_P
+@partial(jnp.vectorize, signature="(d,d)->(d,d)")
+def cholesky(P):
+    """
+    A wrapper for cholesky that handles numerical issues when P is too close to being 0.
+
+    Parameters
+    ----------
+    P : Array
+        A (supposedly) positive definite matrix.
+
+    Returns
+    -------
+    L : Array
+        Cholesky decomposition of P.
+    """
+
+    is_gpu = "gpu" in jax.default_backend()
+
+    if is_gpu:
+        u, s, vh = jnp.linalg.svd(P, hermitian=True)
+        s = jnp.maximum(s, 0.)
+        P = (u * s[:, None]) @ vh
+        P = 0.5 * (P + P.T)
+    chol_P = jnp.linalg.cholesky(P)
+    return chol_P

@@ -1,7 +1,9 @@
 for T in 50 100 200; do
   for D in 5 30 100; do
-    JAX_PLATFORMS=cpu python experiment.py --style kalman --T $T --D $D --no-parallel --no-gpu &
-    JAX_PLATFORMS=cuda CUDA_VISIBLE_DEVICES=0 python experiment.py --style kalman --T $T --D $D --parallel --gpu
+    for style in kalman-1 kalman-2; do
+      JAX_PLATFORMS=cpu python experiment.py --style $style --T $T --D $D --no-parallel --no-gpu
+#      JAX_PLATFORMS=cuda CUDA_VISIBLE_DEVICES=0 python experiment.py --style $style --T $T --D $D --parallel --gpu
+    done
     for N in 25 100; do
       for style in csmc csmc-guided; do
         JAX_PLATFORMS=cpu python experiment.py --style $style --N $N --T $T --D $D --no-parallel --no-gpu --gradient
