@@ -116,7 +116,7 @@ def _dc_map(elems, operator, last_operator):
         even_indices, odd_indices = indices[::2], indices[1::2]
 
         if k == K - 1:
-            padded_elems = combine(even_elems, even_indices, odd_elems, odd_indices, last_operator)
+            padded_elems = last_operator(even_elems, odd_elems)
         else:
             padded_elems = combine(even_elems, even_indices, odd_elems, odd_indices, operator)
 

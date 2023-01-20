@@ -51,7 +51,7 @@ def get_kernel(Mt: Distribution, G0: UnivariatePotential, Gt: Potential, N: int,
 
     def kernel(key, state):
         key_fwd, key_bwd = jax.random.split(key)
-        xs, ancestors = _csmc(key_fwd, state.x, Mt, G0, Gt, N)
+        x, ancestors = _csmc(key_fwd, state.x, Mt, G0, Gt, N)
         return CSMCState(x=x, updated=ancestors != 0)
 
     def init(x_star):
@@ -99,6 +99,6 @@ def _csmc(key, x_star, Mt, G0, Gt, N):
 
     inputs = states, resampling_keys, params
 
-    state_out, *_ = dc_map(inputs, csmc_operator, last_csmc_operator)
+    state_out, *_ = dc_map(inputs, jax.vmap(csmc_operator), jax.vmap(last_csmc_operator))
     xs, _, ancestors = state_out
     return xs, ancestors

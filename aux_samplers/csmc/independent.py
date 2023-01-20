@@ -11,7 +11,8 @@ from jax import numpy as jnp
 from jax.scipy.stats import norm
 
 from .generic import get_kernel as get_base_kernel
-from .._primitives.csmc.base import Distribution, UnivariatePotential, Dynamics, Potential
+from .._primitives.csmc.base import Distribution, UnivariatePotential, Dynamics, Potential, CSMCState
+from .._primitives.csmc.pit.csmc import get_kernel as get_pit_kernel
 
 
 def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int,
@@ -47,7 +48,14 @@ def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Pote
     init: Callable
         Function to initialize the state of the sampler given a trajectory.
     """
+    if not parallel:
+        return _get_classical_kernel(M0, G0, Mt, Gt, N, backward, Pt, gradient)
+    else:
+        return _get_parallel_kernel(M0, G0, Mt, Gt, N, gradient)
 
+
+def _get_classical_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int,
+                          backward: bool, Pt: Optional[Dynamics], gradient):
     # This function uses the classes defined below
     def factory(u, scale):
         if gradient:
@@ -55,7 +63,7 @@ def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Pote
         else:
             grad_pi = 0. * u
         m0 = AuxiliaryM0(u=u[0], sqrt_half_delta=scale[0], grad=grad_pi[0])
-        mt = AuxiliaryMt(params=(u[1:], scale[1:], grad_pi[1:]))
+        mt = AuxiliaryMtDynamics(params=(u[1:], scale[1:], grad_pi[1:]))
         if gradient:
             g0 = GradientAuxiliaryG0(M0=M0, G0=G0, u=u[0], sqrt_half_delta=scale[0], grad=grad_pi[0])
             gt = GradientAuxiliaryGt(Mt=Mt, Gt=Gt, params=(u[1:], scale[1:], grad_pi[1:]))
@@ -64,10 +72,49 @@ def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Pote
             gt = AuxiliaryGt(Mt=Mt, Gt=Gt)
         return m0, g0, mt, gt
 
-    if not parallel:
-        return get_base_kernel(factory, N, backward, Pt)
-    else:
-        raise NotImplementedError("Parallel version not implemented yet.")
+    return get_base_kernel(factory, N, backward, Pt)
+
+
+def _get_parallel_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int, gradient: bool):
+    def factory(u, scale):
+        if gradient:
+            grad_pi = jax.grad(_log_pdf)(u, M0, G0, Mt, Gt)
+        else:
+            grad_pi = 0. * u
+        mt = AuxiliaryMtDistribution(params=(u, scale, grad_pi))
+        if gradient:
+            g0 = GradientAuxiliaryG0(M0=M0, G0=G0, u=u[0], sqrt_half_delta=scale[0], grad=grad_pi[0])
+            gt = GradientAuxiliaryGt(Mt=Mt, Gt=Gt, params=(u[1:], scale[1:], grad_pi[1:]))
+        else:
+            g0 = AuxiliaryG0(M0=M0, G0=G0)
+            gt = AuxiliaryGt(Mt=Mt, Gt=Gt)
+
+        return mt, g0, gt
+
+    def kernel(key, state, delta):
+        # Housekeeping
+        x = state.x
+        T = x.shape[0]
+
+        sqrt_half_delta = jnp.sqrt(0.5 * delta)
+        if jnp.ndim(sqrt_half_delta) == 0:
+            sqrt_half_delta = sqrt_half_delta * jnp.ones((T,))
+        auxiliary_key, key = jax.random.split(key)
+
+        # Auxiliary observations
+        u = x + sqrt_half_delta[:, None] * jax.random.normal(auxiliary_key, x.shape)
+
+        mt, g0, gt = factory(u, sqrt_half_delta)
+
+        _, auxiliary_kernel = get_pit_kernel(mt, g0, gt, N)
+        return auxiliary_kernel(key, state)
+
+    def init(x):
+        T, *_ = x.shape
+        ancestors = jnp.zeros((T,), dtype=jnp.int_)
+        return CSMCState(x=x, updated=ancestors != 0)
+
+    return init, kernel
 
 
 def get_coupled_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int,
@@ -112,7 +159,7 @@ def get_coupled_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, 
         else:
             grad_pi = 0. * u
         m0 = AuxiliaryM0(u=u[0], sqrt_half_delta=scale[0], grad=grad_pi[0])
-        mt = AuxiliaryMt(params=(u[1:], scale[1:], grad_pi[1:]))
+        mt = AuxiliaryMtDynamics(params=(u[1:], scale[1:], grad_pi[1:]))
         if gradient:
             g0 = GradientAuxiliaryG0(M0=M0, G0=G0, u=u[0], sqrt_half_delta=scale[0], grad=grad_pi[0])
             gt = GradientAuxiliaryGt(Mt=Mt, Gt=Gt, params=(u[1:], scale[1:], grad_pi[1:]))
@@ -189,12 +236,23 @@ class GradientAuxiliaryG0(UnivariatePotential):
 
 
 @chex.dataclass
-class AuxiliaryMt(Dynamics):
+class AuxiliaryMtDynamics(Dynamics):
     def sample(self, key, x_t, params):
         u_t, sqrt_half_delta, grad_t = params
         half_delta = sqrt_half_delta ** 2
         mean = u_t[None, :] + half_delta * grad_t[None, :]
         return mean + sqrt_half_delta * jax.random.normal(key, x_t.shape)
+
+@chex.dataclass
+class AuxiliaryMtDistribution(Distribution):
+    params: Array
+
+    def sample(self, key, N):
+        u_t, sqrt_half_delta, grad_t = self.params
+        d = u_t.shape[-1]
+        half_delta = sqrt_half_delta ** 2
+        mean = u_t[None, :] + half_delta * grad_t[None, :]
+        return mean + sqrt_half_delta * jax.random.normal(key, (N, d))
 
 
 @chex.dataclass

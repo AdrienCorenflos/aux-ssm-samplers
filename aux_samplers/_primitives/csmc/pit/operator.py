@@ -35,7 +35,7 @@ from ..resamplings import multinomial
 STATE = Any
 
 
-@partial(jax.jit, static_argnums=(2, 3, 4, 5, 6), donate_argnums=(0, 1))
+@partial(jax.jit, static_argnums=(2, 3, 4), donate_argnums=(0, 1))
 def operator(inputs_a: STATE, inputs_b: STATE, log_weight_fn: Callable[[ArrayTree, ArrayTree, Any], float],
              n_samples: int, last_step: bool):
     """
