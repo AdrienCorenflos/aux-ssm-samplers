@@ -54,7 +54,28 @@ def stationary_covariance(phi, tau, rho, dim):
 
 @jax.jit
 def log_potential(xs, ys):
-    scale = jnp.exp(0.5 * xs)
-    vals = norm.logpdf(ys, scale=scale)
-    vals = jnp.nan_to_num(vals)  # in case the scale is infinite, we get nan, but we want 0
+    vals = jax.vmap(_log_potential_one)(xs, ys)
     return jnp.sum(vals)
+
+
+@jax.jit
+def grad_log_potential(xs, ys):
+    return jax.grad(log_potential)(xs, ys)
+
+
+@jax.jit
+def hess_log_potential(xs, ys):
+    out = jax.vmap(_hess_log_potential_one)(xs, ys)
+    return jnp.diag(out)
+
+
+@jax.jit
+def _log_potential_one(x, y):
+    scale = jnp.exp(0.5 * x)
+    val = norm.logpdf(y, scale=scale)
+    return jnp.nan_to_num(val)  # in case the scale is infinite, we get nan, but we want 0
+
+
+@jax.jit
+def _hess_log_potential_one(x, y):
+    return jax.grad(jax.grad(_log_potential_one))(x, y)
