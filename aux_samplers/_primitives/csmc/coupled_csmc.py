@@ -22,24 +22,25 @@ def get_coupled_kernel(cM0: CoupledDistribution, G0_1: UnivariatePotential, G0_2
 
     Parameters:
     -----------
-    M0:
-        Initial distribution.
-    G0:
+    cM0:
+        Initial coupled distribution.
+    G0_1, G0_2:
         Initial potential.
-    Mt:
-        Dynamics of the model.
-    Gt:
+    cMt:
+        Coupled dynamics of the model.
+    Gt_1, Gt_2:
         Potential of the model.
     N: int
         Total number of particles to use in the cSMC sampler.
     backward: bool
         Whether to perform backward sampling or not. If True, the dynamics must implement a valid logpdf method.
-    Pt_1, Pt_2: Optional[Dynamics]
+    Pt_1, Pt_2: Dynamics, optional
         Dynamics of the true model. If None, it is assumed to be the same as Mt.
+
     Returns:
     --------
     kernel: Callable
-        cSMC kernel.
+        coupled cSMC kernel.
     init: Callable
         Function to initialize the state of the sampler given a trajectory.
     """

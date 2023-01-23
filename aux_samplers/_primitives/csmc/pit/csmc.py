@@ -3,6 +3,7 @@ Implements the parallel-in-time cSMC kernel from Corenflos et al. (2022). Reimpl
 to preserve a common API feel in this library (to some extent).
 """
 import math
+from typing import Optional
 
 import jax
 from jax import numpy as jnp, tree_map
@@ -13,13 +14,15 @@ from .operator import operator
 from ..base import Distribution, UnivariatePotential, Potential, CSMCState
 
 
-def get_kernel(Mt: Distribution, G0: UnivariatePotential, Gt: Potential, N: int, ):
+def get_kernel(Mt: Distribution, G0: UnivariatePotential, Gt: Potential, N: int, Qt: Optional[Distribution] = None):
     """
     Get a parallel-in-time cSMC kernel. This will target the model (up to proportionality)
     .. math::
         Mt[0](x_0) G0(x_0)\prod_{t=1}^T Mt[t](x_t) Gt[t](x_t, x_{t-1})
-
-
+    or, if `Qt` is provided, the model
+    .. math::
+        Qt[0](x_0) G0(x_0)\prod_{t=1}^T Qt[t](x_t) Gt[t](x_t, x_{t-1})
+    but using `Mt` as the proposal distribution.
     Parameters:
     -----------
     Mt:
@@ -40,6 +43,8 @@ def get_kernel(Mt: Distribution, G0: UnivariatePotential, Gt: Potential, N: int,
         Potential of the model.
     N: int
         Total number of particles to use in the cSMC sampler.
+    Qt:
+        Optional. If provided, this will be used to compute the importance weights.
 
     Returns:
     --------
@@ -50,8 +55,7 @@ def get_kernel(Mt: Distribution, G0: UnivariatePotential, Gt: Potential, N: int,
     """
 
     def kernel(key, state):
-        key_fwd, key_bwd = jax.random.split(key)
-        x, ancestors = _csmc(key_fwd, state.x, Mt, G0, Gt, N)
+        x, ancestors = _csmc(key, state.x, Mt, G0, Gt, N, Qt)
         return CSMCState(x=x, updated=ancestors != 0)
 
     def init(x_star):
@@ -62,7 +66,7 @@ def get_kernel(Mt: Distribution, G0: UnivariatePotential, Gt: Potential, N: int,
     return init, kernel
 
 
-def _csmc(key, x_star, Mt, G0, Gt, N):
+def _csmc(key, x_star, Mt, G0, Gt, N, Qt):
     T = x_star.shape[0]
     sampling_key, resampling_key = jax.random.split(key)
     sampling_keys = jax.random.split(sampling_key, T)
@@ -74,11 +78,19 @@ def _csmc(key, x_star, Mt, G0, Gt, N):
     # Replace the first particle with the star trajectory
     xs = xs.at[:, 0].set(x_star)
 
+
     # Compute initial weights and normalize
-    log_wts = jnp.zeros((T, N)) - math.log(N)
+    # FIXME: I am not sure where the logweights of the proposal should live. In the operator or here? Theoretically, no diff,
+    #        but in practice, the degeneracy behaviour may change.
+    if Qt is not None:
+        log_wts = jax.vmap(lambda qs, x: qs.logpdf(x))(Qt, xs)
+        log_wts -= jax.vmap(lambda ms, x: ms.logpdf(x))(Mt, xs)
+    else:
+        log_wts = jnp.zeros((T, N))
+
     log_w0 = G0(xs[0])
-    log_w0 -= logsumexp(log_w0)
-    log_wts = log_wts.at[0].set(log_w0)
+    log_wts = log_wts.at[0].add(log_w0)
+    log_wts -= logsumexp(log_wts, axis=1, keepdims=True)
 
     # Original ancestors:
     origins = jnp.tile(jnp.arange(N), (T, 1))

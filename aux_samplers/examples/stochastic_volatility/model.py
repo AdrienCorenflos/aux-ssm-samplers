@@ -2,7 +2,9 @@ from functools import partial
 
 import jax
 import jax.numpy as jnp
+import jaxopt as jaxopt
 import numpy as np
+from jax.scipy.linalg import solve
 from jax.scipy.stats import norm
 
 
@@ -38,7 +40,6 @@ def get_dynamics(nu, phi, tau, rho, dim):
 
     m0 = mu
     P0 = Q
-
     return m0, P0, F, Q, b
 
 

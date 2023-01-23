@@ -11,8 +11,10 @@ from jax import numpy as jnp
 from jax.scipy.stats import norm
 
 from .generic import get_kernel as get_base_kernel
-from .._primitives.csmc.base import Distribution, UnivariatePotential, Dynamics, Potential, CSMCState
+from .._primitives.csmc.base import Distribution, UnivariatePotential, Dynamics, Potential, CSMCState, CoupledDynamics, \
+    CoupledDistribution
 from .._primitives.csmc.pit.csmc import get_kernel as get_pit_kernel
+from .._primitives.math.mvn.couplings import reflection_maximal, reflection
 
 
 def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int,
@@ -75,21 +77,22 @@ def _get_classical_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamic
     return get_base_kernel(factory, N, backward, Pt)
 
 
-def _get_parallel_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int, gradient: bool):
+def _get_parallel_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int,
+                         gradient: bool):
     def factory(u, scale):
         if gradient:
             grad_pi = jax.grad(_log_pdf)(u, M0, G0, Mt, Gt)
-        else:
-            grad_pi = 0. * u
-        mt = AuxiliaryMtDistribution(params=(u, scale, grad_pi))
-        if gradient:
-            g0 = GradientAuxiliaryG0(M0=M0, G0=G0, u=u[0], sqrt_half_delta=scale[0], grad=grad_pi[0])
-            gt = GradientAuxiliaryGt(Mt=Mt, Gt=Gt, params=(u[1:], scale[1:], grad_pi[1:]))
-        else:
-            g0 = AuxiliaryG0(M0=M0, G0=G0)
-            gt = AuxiliaryGt(Mt=Mt, Gt=Gt)
+            mt = AuxiliaryMtDistribution(params=(u, scale, grad_pi))
+            qt = AuxiliaryMtDistribution(params=(u, scale, None))
 
-        return mt, g0, gt
+        else:
+            mt = AuxiliaryMtDistribution(params=(u, scale, None))
+            qt = None
+
+        g0 = AuxiliaryG0(M0=M0, G0=G0)
+        gt = AuxiliaryGt(Mt=Mt, Gt=Gt)
+
+        return mt, g0, gt, qt
 
     def kernel(key, state, delta):
         # Housekeeping
@@ -104,9 +107,9 @@ def _get_parallel_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics
         # Auxiliary observations
         u = x + sqrt_half_delta[:, None] * jax.random.normal(auxiliary_key, x.shape)
 
-        mt, g0, gt = factory(u, sqrt_half_delta)
+        mt, g0, gt, qt = factory(u, sqrt_half_delta)
 
-        _, auxiliary_kernel = get_pit_kernel(mt, g0, gt, N)
+        _, auxiliary_kernel = get_pit_kernel(mt, g0, gt, N, qt)
         return auxiliary_kernel(key, state)
 
     def init(x):
@@ -174,6 +177,29 @@ def get_coupled_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, 
         raise NotImplementedError("Parallel version not implemented yet.")
 
 
+def _get_classical_coupled_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int,
+                                  backward: bool, Pt: Optional[Dynamics], gradient):
+    # This function uses the classes defined below
+    def coupled_factory(u_1, u_2, scale):
+        if gradient:
+            grad_pi_1 = jax.grad(_log_pdf)(u_1, M0, G0, Mt, Gt)
+            grad_pi_2 = jax.grad(_log_pdf)(u_2, M0, G0, Mt, Gt)
+        else:
+            grad_pi_1, grad_pi_2 = 0. * u_1, 0. * u_2
+
+        cm0 = AuxiliaryM0(u=u[0], sqrt_half_delta=scale[0], grad=grad_pi[0])
+        mt = AuxiliaryMtDynamics(params=(u[1:], scale[1:], grad_pi[1:]))
+        if gradient:
+            g0 = GradientAuxiliaryG0(M0=M0, G0=G0, u=u[0], sqrt_half_delta=scale[0], grad=grad_pi[0])
+            gt = GradientAuxiliaryGt(Mt=Mt, Gt=Gt, params=(u[1:], scale[1:], grad_pi[1:]))
+        else:
+            g0 = AuxiliaryG0(M0=M0, G0=G0)
+            gt = AuxiliaryGt(Mt=Mt, Gt=Gt)
+        return m0, g0, mt, gt
+
+    return get_base_kernel(coupled_factory, N, backward, Pt, coupled=True)
+
+
 def _log_pdf(u, M0, G0, Mt, Gt):
     # Compute the log-pdf of the auxiliary variable
 
@@ -190,6 +216,12 @@ def _log_pdf(u, M0, G0, Mt, Gt):
     return log_pdf
 
 
+###########################
+# Auxiliary distributions #
+###########################
+
+# M0:
+
 @chex.dataclass
 class AuxiliaryM0(Distribution):
     u: Array
@@ -202,11 +234,42 @@ class AuxiliaryM0(Distribution):
         logpdf = norm.logpdf(x, mean, self.sqrt_half_delta)
         return jnp.sum(logpdf, axis=-1)
 
-    def sample(self, key, n):
+    def sample(self, key, N):
         half_delta = self.sqrt_half_delta ** 2
         mean = self.u + half_delta * self.grad
-        return mean[None, ...] + self.sqrt_half_delta * jax.random.normal(key, (n, *self.u.shape))
+        return mean[None, ...] + self.sqrt_half_delta * jax.random.normal(key, (N, *self.u.shape))
 
+
+@chex.dataclass
+class coupledAuxiliaryM0(CoupledDistribution):
+    u_1: Array
+    u_2: Array
+    sqrt_half_delta: float
+    grad_1: Array
+    grad_2: Array
+
+    def _logpdf(self, x, m):
+        logpdf = norm.logpdf(x, m, self.sqrt_half_delta)
+        return jnp.sum(logpdf, axis=-1)
+
+    def logpdf_1(self, x):
+        half_delta = self.sqrt_half_delta ** 2
+        mean = self.u_1 + half_delta * self.grad_1
+        return self._logpdf(x, mean)
+
+    def logpdf_2(self, x):
+        half_delta = self.sqrt_half_delta ** 2
+        mean = self.u_2 + half_delta * self.grad_2
+        return self._logpdf(x, mean)
+
+    def sample(self, key, N):
+        half_delta = self.sqrt_half_delta ** 2
+        mean_1 = self.u_1 + half_delta * self.grad_1
+        mean_2 = self.u_2 + half_delta * self.grad_2
+        return reflection_maximal(key, N, mean_1, mean_2, self.sqrt_half_delta)
+
+
+# G0:
 
 @chex.dataclass
 class AuxiliaryG0(UnivariatePotential):
@@ -235,6 +298,8 @@ class GradientAuxiliaryG0(UnivariatePotential):
         return out
 
 
+# Mt:
+
 @chex.dataclass
 class AuxiliaryMtDynamics(Dynamics):
     def sample(self, key, x_t, params):
@@ -242,6 +307,20 @@ class AuxiliaryMtDynamics(Dynamics):
         half_delta = sqrt_half_delta ** 2
         mean = u_t[None, :] + half_delta * grad_t[None, :]
         return mean + sqrt_half_delta * jax.random.normal(key, x_t.shape)
+
+
+@chex.dataclass
+class CoupledAuxiliaryMtDynamics(CoupledDynamics):
+    def sample(self, key, x_t_1, x_t_2, params_1, params_2):
+        u_t_1, sqrt_half_delta, grad_t_1 = params_1
+        u_t_2, _, grad_t_2 = params_2
+        half_delta = sqrt_half_delta ** 2
+        mean_1 = u_t_1[None, :] + half_delta * grad_t_1[None, :]
+        mean_2 = u_t_2[None, :] + half_delta * grad_t_2[None, :]
+        keys = jax.random.split(key, x_t_1.shape[0])
+        return jax.vmap(reflection, (0, 0, None, 0, None))(keys, mean_1, sqrt_half_delta, mean_2,
+                                                           sqrt_half_delta)
+
 
 @chex.dataclass
 class AuxiliaryMtDistribution(Distribution):
@@ -251,9 +330,87 @@ class AuxiliaryMtDistribution(Distribution):
         u_t, sqrt_half_delta, grad_t = self.params
         d = u_t.shape[-1]
         half_delta = sqrt_half_delta ** 2
-        mean = u_t[None, :] + half_delta * grad_t[None, :]
+        if grad_t is None:
+            mean = u_t[None, :]
+        else:
+            mean = u_t[None, :] + half_delta * grad_t[None, :]
         return mean + sqrt_half_delta * jax.random.normal(key, (N, d))
 
+    def logpdf(self, x):
+        u_t, sqrt_half_delta, grad_t = self.params
+        half_delta = sqrt_half_delta ** 2
+
+        if grad_t is None:
+            mean = u_t
+        else:
+            mean = u_t + half_delta * grad_t
+        logpdf = norm.logpdf(x, mean, sqrt_half_delta)
+        return jnp.sum(logpdf, axis=-1)
+
+
+@chex.dataclass
+class CoupledAuxiliaryMtDistribution(CoupledDistribution):
+    params_1: Array
+    params_2: Array
+
+
+    def sample(self, key, N):
+        u_t_1, sqrt_half_delta, grad_t_1 = self.params_1
+        u_t_2, _, grad_t_2 = self.params_2
+        d = u_t_1.shape[-1]
+
+        half_delta = sqrt_half_delta ** 2
+        if grad_t_1 is None:
+            mean_1 = u_t_1[None, :]
+            mean_2 = u_t_2[None, :]
+        else:
+            mean_1 = u_t_1[None, :] + half_delta * grad_t_1[None, :]
+            mean_2 = u_t_2[None, :] + half_delta * grad_t_2[None, :]
+
+        return reflection_maximal(key, N, mean_1, mean_2, self.sqrt_half_delta)
+
+    def _logpdf(self, x, params):
+        u_t, sqrt_half_delta, grad_t = params
+        half_delta = sqrt_half_delta ** 2
+        if grad_t is None:
+            mean = u_t
+        else:
+            mean = u_t + half_delta * grad_t
+        logpdf = norm.logpdf(x, mean, sqrt_half_delta)
+        return jnp.sum(logpdf, axis=-1)
+
+    def logpdf_1(self, x):
+        return self._logpdf(x, self.params_1)
+
+    def logpdf_2(self, x):
+        return self._logpdf(x, self.params_2)
+
+
+@chex.dataclass
+class AuxiliaryMtDynamics(Dynamics):
+    def sample(self, key, x_t, params):
+        u_t, sqrt_half_delta, grad_t = params
+        half_delta = sqrt_half_delta ** 2
+        mean = u_t[None, :] + half_delta * grad_t[None, :]
+        return mean + sqrt_half_delta * jax.random.normal(key, x_t.shape)
+
+
+@chex.dataclass
+class CoupledAuxiliaryMtDynamics(CoupledDynamics):
+    def sample(self, key, x_t_1, x_t_2, params_1, params_2):
+        u_t_1, sqrt_half_delta, grad_t_1 = params_1
+        u_t_2, _, grad_t_2 = params_2
+        half_delta = sqrt_half_delta ** 2
+        mean_1 = u_t_1[None, :] + half_delta * grad_t_1[None, :]
+        mean_2 = u_t_2[None, :] + half_delta * grad_t_2[None, :]
+        keys = jax.random.split(key, x_t_1.shape[0])
+        return jax.vmap(reflection, (0, 0, None, 0, None))(keys, mean_1, sqrt_half_delta, mean_2,
+                                                           sqrt_half_delta)
+
+
+
+
+# Gt:
 
 @chex.dataclass
 class AuxiliaryGt(Potential):

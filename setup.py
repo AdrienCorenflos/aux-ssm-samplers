@@ -23,6 +23,7 @@ setuptools.setup(
         "chex>=0.1.5",
         "jax>=0.3.25",
         "jaxlib>=0.3.25",
+        "jaxopt>=0.5.5",
         "jaxtyping>=0.2.8",
         "matplotlib>=3.6.3"
         "statsmodels>=0.13.5",

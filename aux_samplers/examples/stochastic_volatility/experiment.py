@@ -35,15 +35,15 @@ parser.set_defaults(verbose=True)
 # Experiment arguments
 parser.add_argument("--n-experiments", dest="n_experiments", type=int, default=10)
 parser.add_argument("--T", dest="T", type=int, default=50)
-parser.add_argument("--D", dest="D", type=int, default=30)
+parser.add_argument("--D", dest="D", type=int, default=5)
 parser.add_argument("--n-samples", dest="n_samples", type=int, default=10_000)
 parser.add_argument("--burnin", dest="burnin", type=int, default=2_500)
 parser.add_argument("--target-alpha", dest="target_alpha", type=float, default=0.5)
 parser.add_argument("--lr", dest="lr", type=float, default=1.)
 parser.add_argument("--beta", dest="beta", type=int, default=0.1)
-parser.add_argument("--delta-init", dest="delta_init", type=float, default=1e-10)
+parser.add_argument("--delta-init", dest="delta_init", type=float, default=1e-20)
 parser.add_argument("--seed", dest="seed", type=int, default=1234)
-parser.add_argument("--style", dest="style", type=str, default="csmc")
+parser.add_argument("--style", dest="style", type=str, default="kalman-2")
 parser.add_argument("--gradient", action='store_true')
 parser.add_argument('--no-gradient', dest='gradient', action='store_false')
 parser.set_defaults(gradient=False)
@@ -70,7 +70,8 @@ if args.style != "kalman":
     args.target_alpha = 1 - (1 + args.N) ** (-1 / 3)
 elif args.style == "csmc" and args.parallel:
     # More conservative target alpha for parallel cSMC. This is perhaps an artifact of the warmup, but it's not clear.
-    args.target_alpha = 1 - (1 + args.N) ** (-1 / 6)
+    args.target_alpha = 0.33
+
 
 # STATS FN
 def stats_fn(x_1, x_2):
@@ -127,6 +128,7 @@ def one_experiment(exp_key, verbose=args.verbose):
     true_xs, ys = get_data(data_key, NU, PHI, TAU, RHO, args.D, args.T)
 
     # INIT
+
     xs_init, _ = get_data(init_key, NU, PHI, TAU, RHO, args.D, args.T)
 
     # KERNEL
@@ -188,19 +190,19 @@ def full_experiment():
         #     time_per_key[i] = time.time() - start
         # except:  # noqa
         #     continue
-        from matplotlib import pyplot as plt
-        plt.plot(np.arange(args.T), traj[..., -1], color="tab:orange")
-        std = np.sqrt(squared_exp[..., -1] - traj[..., -1] ** 2)
-        plt.fill_between(np.arange(args.T), traj[..., -1] + 2 * std, traj[..., -1] - 2 * std,
-                         color="tab:orange", alpha=0.2)
-        plt.plot(np.arange(args.T), true_xs[:, -1], color="tab:blue")
-        plt.plot(np.arange(args.T), xs_init[:, -1], color="k", linestyle="--")
-        plt.show()
-
-        fig, ax = plt.subplots(figsize=(10, 5))
-        ax.plot(np.arange(args.T), burnin_delta, color="tab:blue")
-        ax.twinx().plot(np.arange(args.T), pct_accepted, color="tab:orange")
-        plt.show()
+        # from matplotlib import pyplot as plt
+        # plt.plot(np.arange(args.T), traj[..., -1], color="tab:orange")
+        # std = np.sqrt(squared_exp[..., -1] - traj[..., -1] ** 2)
+        # plt.fill_between(np.arange(args.T), traj[..., -1] + 2 * std, traj[..., -1] - 2 * std,
+        #                  color="tab:orange", alpha=0.2)
+        # plt.plot(np.arange(args.T), true_xs[:, -1], color="tab:blue")
+        # plt.plot(np.arange(args.T), xs_init[:, -1], color="k", linestyle="--")
+        # plt.show()
+        #
+        # fig, ax = plt.subplots(figsize=(10, 5))
+        # ax.plot(np.arange(args.T), burnin_delta, color="tab:blue")
+        # ax.twinx().plot(np.arange(args.T), pct_accepted, color="tab:orange")
+        # plt.show()
     return ejsd_per_key, acceptance_rate_per_key, delta_per_key, time_per_key
 
 

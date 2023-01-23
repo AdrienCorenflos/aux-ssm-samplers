@@ -4,11 +4,12 @@ from functools import partial
 import chex
 import jax
 import jax.numpy as jnp
+from chex import Numeric
 from jax.scipy.linalg import solve_triangular
 from jaxtyping import Float, Array
 
-from ..couplings import thorisson as thorisson_gen, coupled_sampler
 from .base import logpdf, get_optimal_covariance, rvs, tril_log_det
+from ..couplings import thorisson as thorisson_gen, coupled_sampler
 
 _EPS = 0.01  # this is a small float to make sure that log2(2**k) = k exactly
 
@@ -91,7 +92,7 @@ def rejection(key: chex.PRNGKey,
     log_M_P_Q = jnp.maximum(log_det_chol_Q - log_det_chol_P, 0.)
     log_M_Sigma_Q = jnp.maximum(log_det_chol_Q - log_det_chol_Sig, 0.)
 
-    Gamma_hat = partial(_reflection_maximal, m=m1, mu=m2, chol_Q=chol_Q)
+    Gamma_hat = partial(reflection_maximal, m=m1, mu=m2, chol_Q=chol_Q)
     log_p = lambda x: logpdf(x, m1, L1)
     log_q = lambda x: logpdf(x, m2, L2)
 
@@ -131,7 +132,8 @@ def reflection(key, m1, L1, m2, _L2):
     bool
         Whether the samples are coupled
     """
-    return _reflection_maximal(key, 1, m1, m2, L1)
+    x1, x2, coupled = reflection_maximal(key, 1, m1, m2, L1)
+    return x1[0], x2[0], coupled[0]
 
 
 def lindvall_roger(key, m1, L1, m2, L2):
@@ -230,7 +232,7 @@ def modified_lindvall_roger(key, m1, L1, m2, L2):
     return jax.lax.cond(cond, if_true, if_false)
 
 
-def _reflection_maximal(key, N: int, m: jnp.ndarray, mu: jnp.ndarray, chol_Q: jnp.ndarray):
+def reflection_maximal(key, N: int, m: Array, mu: Array, chol_Q: Array | Numeric):
     """
     Sample N pairs of points from the reflection maximal coupling of two multivariate normal distributions.
     The first distribution is N(mu, chol_Q^T chol_Q) and the second is N(m, chol_Q^T chol_Q).
@@ -284,6 +286,5 @@ def _reflection_maximal(key, N: int, m: jnp.ndarray, mu: jnp.ndarray, chol_Q: jn
     else:
         res_1 = m[None, :] + norm * chol_Q
         res_2 = mu[None, :] + reflected_norm * chol_Q
-    # if N == 1:
-    #     return res_1[0], res_2[0], do_accept[0]
+
     return res_1, res_2, do_accept

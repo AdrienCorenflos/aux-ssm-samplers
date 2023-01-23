@@ -14,7 +14,7 @@ from .._primitives.csmc.base import Distribution, UnivariatePotential, Dynamics,
 from .._primitives.math.mvn.couplings import lindvall_roger
 
 
-def get_kernel(factory: Callable[[Array, Numeric], Tuple[Distribution, UnivariatePotential, Dynamics, Potential]],
+def get_kernel(factory: Callable,
                N: int,
                backward: bool = False,
                Pt: Optional[Dynamics] = None,
@@ -29,7 +29,9 @@ def get_kernel(factory: Callable[[Array, Numeric], Tuple[Distribution, Univariat
     ----------
     factory:
         Factory that returns the initial distribution, the initial potential, the dynamics,
-        and the potential of the models.
+        and the potential of the models. Alternatively, a coupled factory can be provided, which returns
+        the coupled initial distribution, the initial potential of the first model, the initial potential of the second model,
+        the coupled dynamics, the potential of the first model, and the potential of the second model.
     N:
         Total number of particles to use in the cSMC sampler.
     backward: bool
@@ -88,7 +90,7 @@ def _get_kernel(factory: Callable[[Array, Numeric], Tuple[Distribution, Univaria
 
 
 def _get_coupled_kernel(
-        factory: Callable[[Array, Numeric], Tuple[Distribution, UnivariatePotential, Dynamics, Potential]],
+        coupled_factory,
         N: int,
         backward: bool,
         Pt: Dynamics):
@@ -108,11 +110,7 @@ def _get_coupled_kernel(
         aux_keys = jax.random.split(auxiliary_key, T)
         u_1, u_2, _ = jax.vmap(mvn_coupling)(aux_keys, x_1, x_2)
 
-        m0_1, g0_1, mt_1, gt_1 = factory(u_1, sqrt_half_delta)
-        m0_2, g0_2, mt_2, gt_2 = factory(u_2, sqrt_half_delta)
-
-        cm0 = CRNDistribution(dist_1=m0_1, dist_2=m0_2)
-        cmt = CRNDynamics(dynamics_1=mt_1, dynamics_2=mt_2)
+        cm0, g0_1, g0_2, cmt, gt_1, gt_2 = coupled_factory(u_1, u_2, sqrt_half_delta)
 
         _, auxiliary_kernel = get_standard_coupled_kernel(cm0, g0_1, g0_2, cmt, gt_1, gt_2, N, backward=backward,
                                                           Pt_1=Pt, Pt_2=Pt)
