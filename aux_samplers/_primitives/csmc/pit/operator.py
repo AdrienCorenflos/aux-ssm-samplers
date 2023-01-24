@@ -22,15 +22,15 @@
 
 import math
 from functools import partial
-from typing import Any, Callable
+from typing import Any, Callable, Tuple
 
 import jax
 import jax.numpy as jnp
-from chex import ArrayTree
+from chex import ArrayTree, Array
 from jax import tree_map, vmap
 from jax.scipy.special import logsumexp
 
-from ..resamplings import multinomial
+from ..resamplings import multinomial, coupled_multinomial
 
 STATE = Any
 
@@ -49,7 +49,7 @@ def operator(inputs_a: STATE, inputs_b: STATE, log_weight_fn: Callable[[ArrayTre
         Second are the jax random keys used for resampling at the time steps to the left of the current time step.
         Third are the parameters used to compute the mixing weights to the left of the current time step.
     inputs_b: STATE
-        Same as `inputs_b` but to the right of the current time step
+        Same as `inputs_a` but to the right of the current time step
     log_weight_fn: callable
         Function that computes the un-normalised stitching N^2 weights, first argument is x_{t-1}, second is x_t, and
         third is the parameters.
@@ -84,6 +84,84 @@ def operator(inputs_a: STATE, inputs_b: STATE, log_weight_fn: Callable[[ArrayTre
     return _gather_results(l_idx, r_idx, n_samples,
                            trajectories_a, origins_a, log_weights_a, keys_a, params_a,
                            trajectories_b, origins_b, log_weights_b, keys_b, params_b)
+
+
+@partial(jax.jit, static_argnums=(2, 3, 4), donate_argnums=(0, 1))
+def coupled_operator(inputs_a: Tuple[STATE, STATE], inputs_b: Tuple[STATE, STATE],
+                     log_weight_fn_1: Callable[[ArrayTree, ArrayTree, Any], float],
+                     log_weight_fn_2: Callable[[ArrayTree, ArrayTree, Any], float],
+                     n_samples: int, last_step: bool):
+    """
+    Operator corresponding to the stitching operation of the conditional dSMC algorithm.
+
+    Parameters
+    ----------
+    inputs_a: Tuple[STATE, STATE]
+        A tuple of two arguments.
+        The first two ones correspond to the inputs of the `operator` function.
+        The last one corresponds to coupling flags.
+    inputs_b: Tuple[STATE, STATE]
+        Same as `inputs_b` but to the right of the current time step
+    log_weight_fn_1: callable
+        Function that computes the un-normalised stitching N^2 weights, first argument is x_{t-1}, second is x_t, and
+        third is the parameters.
+        It will be automatically batched so only needs to be expressed elementwise
+    log_weight_fn_2: callable
+        Same as `log_weight_fn_1` but for the second instance of the coupled dSMC algorithm
+    n_samples: int
+        Number of samples in the resampling
+    last_step: bool
+        Whether we are at the last time step or not. If so, we only need one trajectory.
+
+    Returns
+    -------
+
+    """
+
+    # Unpack the states
+    inputs_a_1, inputs_a_2 = inputs_a
+    inputs_b_1, inputs_b_2 = inputs_b
+
+    state_a_1, keys_a_1, params_a_1 = inputs_a_1
+    state_a_2, keys_a_2, params_a_2 = inputs_a_2
+    state_b_1, keys_b_1, params_b_1 = inputs_b_1
+    state_b_2, keys_b_2, params_b_2 = inputs_b_2
+
+    trajectories_a_1, log_weights_a_1, origins_a_1 = state_a_1
+    trajectories_a_2, log_weights_a_2, origins_a_2 = state_a_2
+    trajectories_b_1, log_weights_b_1, origins_b_1 = state_b_1
+    trajectories_b_2, log_weights_b_2, origins_b_2 = state_b_2
+
+    weights_1 = get_weights_batch(trajectories_a_1, log_weights_a_1,
+                                  trajectories_b_1, log_weights_b_1, params_b_1,
+                                  log_weight_fn_1)
+    weights_2 = get_weights_batch(trajectories_a_2, log_weights_a_2,
+                                  trajectories_b_2, log_weights_b_2, params_b_2,
+                                  log_weight_fn_2)
+    if last_step:
+        # If last step
+        p_1, p_2 = jnp.ravel(weights_1), jnp.ravel(weights_2)
+        idx_1, idx_2, idx_coupled = coupled_multinomial(keys_b_1[0], p_1, p_2, 1)
+        l_idx_1, r_idx_1 = jnp.unravel_index(idx_1[0], (n_samples, n_samples))
+        l_idx_2, r_idx_2 = jnp.unravel_index(idx_2[0], (n_samples, n_samples))
+
+    else:
+        p_1, p_2 = jnp.ravel(weights_1), jnp.ravel(weights_2)
+        idx_1, idx_2, _ = coupled_multinomial(keys_b_1[0], p_1, p_2, n_samples)
+        l_idx_1, r_idx_1 = jax.vmap(jnp.unravel_index, in_axes=[0, None])(idx_1, (n_samples, n_samples))
+        l_idx_2, r_idx_2 = jax.vmap(jnp.unravel_index, in_axes=[0, None])(idx_2, (n_samples, n_samples))
+
+
+    outputs_1 = _gather_results(l_idx_1, r_idx_1, n_samples,
+                                trajectories_a_1, origins_a_1, log_weights_a_1, keys_a_1, params_a_1,
+                                trajectories_b_1, origins_b_1, log_weights_b_1, keys_b_1, params_b_1)
+
+    outputs_2 = _gather_results(l_idx_2, r_idx_2, n_samples,
+                                trajectories_a_2, origins_a_2, log_weights_a_2, keys_a_2, params_a_2,
+                                trajectories_b_2, origins_b_2, log_weights_b_2, keys_b_2, params_b_2)
+
+    # Update the coupling flags
+    return outputs_1, outputs_2
 
 
 def _gather_results(left_idx, right_idx, n_samples,

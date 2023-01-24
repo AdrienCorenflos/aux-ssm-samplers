@@ -39,7 +39,7 @@ def multinomial(key: PRNGKey, weights: Float[Array, "dim_x"], N: Optional[int] =
 
 
 def coupled_multinomial(
-        key: PRNGKey, weights_1: Float[Array, "dim_x"], weights_2: Float[Array, "dim_x"]
+        key: PRNGKey, weights_1: Float[Array, "dim_x"], weights_2: Float[Array, "dim_x"], N: Optional[int] = None
 ) -> PyTree[Int[Array, "dim_x"]]:
     """
     Maximal coupling of conditional multinomial resampling schemes. The weights are assumed to be normalised already.
@@ -53,6 +53,8 @@ def coupled_multinomial(
         First set of weights.
     weights_2:
         Second set of weights.
+    N:
+        Number of particles to resample.
 
     Returns
     -------
@@ -63,7 +65,7 @@ def coupled_multinomial(
     coupled_flag:
         Flag indicating whether the coupling was successful or not.
     """
-    idx_1, idx_2, coupled = index_max_coupling(key, weights_1, weights_2)
+    idx_1, idx_2, coupled = index_max_coupling(key, weights_1, weights_2, N)
 
     idx_1 = idx_1.at[0].set(0)
     idx_2 = idx_2.at[0].set(0)
