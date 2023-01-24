@@ -62,8 +62,7 @@ def test_lgssm():
     print(xs.std(axis=0))
 
 
-@pytest.mark.parametrize("backward", [True, False])
-def test_coupled_csmc(backward):
+def test_coupled_csmc():
     JAX_KEY = jax.random.PRNGKey(0)
 
     T = 25  # T time steps
