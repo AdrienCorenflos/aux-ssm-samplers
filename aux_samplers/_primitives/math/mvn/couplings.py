@@ -1,5 +1,6 @@
 """Coupling utilities"""
 from functools import partial
+from typing import Union
 
 import chex
 import jax
@@ -232,7 +233,7 @@ def modified_lindvall_roger(key, m1, L1, m2, L2):
     return jax.lax.cond(cond, if_true, if_false)
 
 
-def reflection_maximal(key, N: int, m: Array, mu: Array, chol_Q: Array | Numeric):
+def reflection_maximal(key, N: int, m: Array, mu: Array, chol_Q: Union[Array, Numeric]):
     """
     Sample N pairs of points from the reflection maximal coupling of two multivariate normal distributions.
     The first distribution is N(mu, chol_Q^T chol_Q) and the second is N(m, chol_Q^T chol_Q).

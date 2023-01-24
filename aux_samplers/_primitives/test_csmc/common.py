@@ -9,7 +9,7 @@ from aux_samplers._primitives.csmc.base import Dynamics, Distribution, Univariat
 
 
 @chex.dataclass
-class GaussianDynamics(Dynamics):
+class GaussianDynamics(Dynamics, Potential):
     """
     AR dynamics with Gaussian noise.
     """
@@ -21,11 +21,14 @@ class GaussianDynamics(Dynamics):
 
     def logpdf(self, x_t_p_1, x_t, _params):
         x_pred = self.rho * x_t
-        return norm.logpdf(x_t_p_1, x_pred, self.sig).ravel()
+        return jnp.sum(norm.logpdf(x_t_p_1, x_pred, self.sig), axis=-1)
 
     def sample(self, key, x_t, params):
         x_pred = self.rho * x_t
         return x_pred + self.sig * jax.random.normal(key, x_t.shape)
+
+    def __call__(self, x_t_p_1, x_t, params):
+        return self.logpdf(x_t_p_1, x_t, params)
 
 
 @chex.dataclass
@@ -40,7 +43,7 @@ class GaussianDistribution(Distribution, UnivariatePotential):
         return self.mu + self.sig * jax.random.normal(key, (N, 1))
 
     def logpdf(self, x):
-        return norm.logpdf(x, self.mu, self.sig).ravel()
+        return jnp.sum(norm.logpdf(x, self.mu, self.sig), axis=-1)
 
     def __call__(self, x):
         return self.logpdf(x)

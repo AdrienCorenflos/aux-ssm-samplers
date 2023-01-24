@@ -13,6 +13,7 @@ If you see this message, you likely are using a cSMC method relying on it.
 Please implement this function or choose the standard cSMC with no backward pass.
 """
 
+_EPS = 1e-10
 
 @dataclass
 class CSMCState(SamplerState):
@@ -108,13 +109,12 @@ class CRNDistribution(CoupledDistribution):
     dist_1: Distribution
     dist_2: Distribution
 
-    _EPS: float = 1e-9
 
     def sample(self, key, N):
         x1 = self.dist_1.sample(key, N)
         x2 = self.dist_2.sample(key, N)
 
-        coupled = jnp.linalg.norm(x1 - x2, axis=-1) < self._EPS
+        coupled = jnp.linalg.norm(x1 - x2, axis=-1) < _EPS
 
         return x1, x2, coupled
 

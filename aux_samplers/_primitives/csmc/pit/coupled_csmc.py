@@ -9,7 +9,7 @@ from jax import numpy as jnp, tree_map
 from jax.scipy.special import logsumexp
 
 from .dc_map import dc_map
-from .operator import operator, coupled_operator
+from .operator import coupled_operator
 from ..base import Distribution, UnivariatePotential, Potential, CSMCState, CoupledDistribution
 from ...base import CoupledSamplerState
 
@@ -64,7 +64,8 @@ def get_coupled_kernel(cMt: CoupledDistribution, G0_1: UnivariatePotential, G0_2
 
     def kernel(key, coupled_state):
         state_1, state_2, coupled_flags = coupled_state.state_1, coupled_state.state_2, coupled_state.flags
-        x_1, ancestors_1, x_2, ancestors_2, coupled_flags = _ccsmc(key, state_1.x, state_2.x, coupled_flags, cMt, G0_1, G0_2, Gt_1,
+        x_1, ancestors_1, x_2, ancestors_2, coupled_flags = _ccsmc(key, state_1.x, state_2.x, coupled_flags, cMt, G0_1,
+                                                                   G0_2, Gt_1,
                                                                    Gt_2, N)
         state_1 = CSMCState(x=x_1, updated=ancestors_1 != 0)
         state_2 = CSMCState(x=x_2, updated=ancestors_2 != 0)
@@ -119,20 +120,22 @@ def _ccsmc(key, x_star_1, x_star_2, coupled_flags, cMt, G0_1, G0_2, Gt_1, Gt_2, 
                                       (fake_params_1, fake_params_2))
 
     def log_weight_fn_1(x_t_1, x_t, params_t): return Gt_1(x_t, x_t_1, params_t)
+
     def log_weight_fn_2(x_t_2, x_t, params_t): return Gt_2(x_t, x_t_2, params_t)
 
     ccsmc_operator = lambda inputs_a, inputs_b: coupled_operator(inputs_a, inputs_b, log_weight_fn_1, log_weight_fn_2,
                                                                  N, False)
-    last_ccsmc_operator = lambda inputs_a, inputs_b: operator(inputs_a, inputs_b, log_weight_fn_1, log_weight_fn_2, N,
-                                                              True)
+    last_ccsmc_operator = lambda inputs_a, inputs_b: coupled_operator(inputs_a, inputs_b, log_weight_fn_1,
+                                                                      log_weight_fn_2, N, True)
 
     inputs_1 = states_1, resampling_keys, params_1
     inputs_2 = states_2, resampling_keys, params_2
     inputs = inputs_1, inputs_2
     outputs = dc_map(inputs, jax.vmap(ccsmc_operator), jax.vmap(last_ccsmc_operator))
     state_out_1, state_out_2 = outputs
-    xs_1, _, ancestors_1 = state_out_1
-    xs_2, _, ancestors_2 = state_out_2
+    xs_1, _, ancestors_1 = state_out_1[0]
+    xs_2, _, ancestors_2 = state_out_2[0]
 
-    coupled_flags = flags[ancestors_1] & (ancestors_1 == ancestors_2)
+    flags = jax.vmap(lambda x, y: x[y])(flags, ancestors_1)
+    coupled_flags = flags & (ancestors_1 == ancestors_2)
     return xs_1, ancestors_1, xs_2, ancestors_2, coupled_flags

@@ -31,6 +31,7 @@ from jax import tree_map, vmap
 from jax.scipy.special import logsumexp
 
 from ..resamplings import multinomial, coupled_multinomial
+from ...math.couplings import index_max_coupling
 
 STATE = Any
 
@@ -86,7 +87,7 @@ def operator(inputs_a: STATE, inputs_b: STATE, log_weight_fn: Callable[[ArrayTre
                            trajectories_b, origins_b, log_weights_b, keys_b, params_b)
 
 
-@partial(jax.jit, static_argnums=(2, 3, 4), donate_argnums=(0, 1))
+@partial(jax.jit, static_argnums=(2, 3, 4, 5), donate_argnums=(0, 1))
 def coupled_operator(inputs_a: Tuple[STATE, STATE], inputs_b: Tuple[STATE, STATE],
                      log_weight_fn_1: Callable[[ArrayTree, ArrayTree, Any], float],
                      log_weight_fn_2: Callable[[ArrayTree, ArrayTree, Any], float],
@@ -141,9 +142,9 @@ def coupled_operator(inputs_a: Tuple[STATE, STATE], inputs_b: Tuple[STATE, STATE
     if last_step:
         # If last step
         p_1, p_2 = jnp.ravel(weights_1), jnp.ravel(weights_2)
-        idx_1, idx_2, idx_coupled = coupled_multinomial(keys_b_1[0], p_1, p_2, 1)
-        l_idx_1, r_idx_1 = jnp.unravel_index(idx_1[0], (n_samples, n_samples))
-        l_idx_2, r_idx_2 = jnp.unravel_index(idx_2[0], (n_samples, n_samples))
+        idx_1, idx_2, _ = index_max_coupling(keys_b_1[0], p_1, p_2, 1)
+        l_idx_1, r_idx_1 = jnp.unravel_index(idx_1, (n_samples, n_samples))
+        l_idx_2, r_idx_2 = jnp.unravel_index(idx_2, (n_samples, n_samples))
 
     else:
         p_1, p_2 = jnp.ravel(weights_1), jnp.ravel(weights_2)

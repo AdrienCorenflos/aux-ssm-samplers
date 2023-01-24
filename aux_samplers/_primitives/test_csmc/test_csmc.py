@@ -44,7 +44,7 @@ def test_flat_potential(backward):
 
     def body(state, curr_key):
         state = kernel(curr_key, state)
-        return state, (state.x, state.ancestors)
+        return state, (state.x, state.updated)
 
     _, (xs, ancestors) = jax.lax.scan(body, init_state, jax.random.split(key, M))
 
@@ -102,7 +102,7 @@ def test_lgssm(backward):
 
     def body(state, curr_key):
         state = kernel(curr_key, state)
-        return state, (state.x, state.ancestors)
+        return state, (state.x, state.updated)
 
     _, (xs, ancestors) = jax.lax.scan(body, init_state, jax.random.split(key, M))
 
