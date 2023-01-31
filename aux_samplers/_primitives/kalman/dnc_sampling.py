@@ -39,6 +39,8 @@ def sampling(key: PRNGKey, ms: Array, Ps: Array, lgssm: LGSSM) -> Array:
         "`dnc_sampling.sampling` is a proof-of-concept (and not efficient) feature kept mostly for pedagogical reasons."
         "Use `sampling.sampling` with the argument `parallel=True` instead.",
         UserWarning)
+    if jnp.ndim(ms) > 2:
+        raise ValueError("Batched sampling is not supported for this function. Use `sampling.sampling` instead.")
 
     key, key_0, key_T = jax.random.split(key, 3)
 
