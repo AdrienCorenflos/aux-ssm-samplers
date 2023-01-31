@@ -101,8 +101,8 @@ def _get_kernel(dynamics_factory,
 
     def do_one(delta, sampling_key, u, x, x_prop=None):
         # Form the proposal LGSSM
-        m0, P0, Fs, Qs, bs = dynamics_factory(x)
-        ys, Hs, Rs, cs = observations_factory(x, u, delta)
+        m0, P0, Fs, Qs, bs, *_ = dynamics_factory(x)
+        ys, Hs, Rs, cs, *_ = observations_factory(x, u, delta)
         # Sample from the proposal
         lgssm = LGSSM(m0, P0, Fs, Qs, bs, Hs, Rs, cs)
         ms, Ps, ell = filtering(ys, lgssm, parallel)
@@ -182,11 +182,11 @@ def _get_coupled_kernel(dynamics_factory,
 
     def do_one(delta, sampling_key, u_1, u_2, x_1, x_2, x_prop_1=None, x_prop_2=None):
         # Form the proposal LGSSM
-        m0_1, P0_1, Fs_1, Qs_1, bs_1 = dynamics_factory(x_1)
-        m0_2, P0_2, Fs_2, Qs_2, bs_2 = dynamics_factory(x_2)
+        m0_1, P0_1, Fs_1, Qs_1, bs_1, *_ = dynamics_factory(x_1)
+        m0_2, P0_2, Fs_2, Qs_2, bs_2, *_ = dynamics_factory(x_2)
 
-        ys_1, Hs_1, Rs_1, cs_1 = observations_factory(x_1, u_1, delta)
-        ys_2, Hs_2, Rs_2, cs_2 = observations_factory(x_2, u_2, delta)
+        ys_1, Hs_1, Rs_1, cs_1, *_ = observations_factory(x_1, u_1, delta)
+        ys_2, Hs_2, Rs_2, cs_2, *_ = observations_factory(x_2, u_2, delta)
 
         # Sample from the proposal
         lgssm_1 = LGSSM(m0_1, P0_1, Fs_1, Qs_1, bs_1, Hs_1, Rs_1, cs_1)

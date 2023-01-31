@@ -1,3 +1,5 @@
+from functools import partial
+
 import jax
 import jax.numpy as jnp
 from chex import Array, PRNGKey
@@ -43,6 +45,11 @@ def _sampling_op(elem1, elem2):
     G1, e1 = elem1
     G2, e2 = elem2
 
+    return _sampling_op_impl(G1, e1, G2, e2)
+
+
+@partial(jnp.vectorize, signature='(dx,dx),(dx),(dx,dx),(dx)->(dx,dx),(dx)')
+def _sampling_op_impl(G1, e1, G2, e2):
     G = G2 @ G1
     e = G2 @ e1 + e2
     return G, e
@@ -50,6 +57,7 @@ def _sampling_op(elem1, elem2):
 
 # Initialization
 
+@partial(jnp.vectorize, signature="(dx,dx),(dx,dx),(dx),(dx),(dx,dx)->(dx),(dx,dx),(dx,dx)")
 def mean_and_chol(F, Q, b, m, P):
     """
     Computes the increments means and Cholesky decompositions for the backward sampling steps.
@@ -84,28 +92,34 @@ def mean_and_chol(F, Q, b, m, P):
 
     inc_m = m - gain @ (F @ m + b)
 
-    L =jnp.linalg.cholesky(inc_Sig)
+    L = jnp.linalg.cholesky(inc_Sig)
     # When there is 0 uncertainty, the Cholesky decomposition is not defined.
     L = jnp.nan_to_num(L)
     return inc_m, L, gain
 
 
+@partial(jnp.vectorize, signature="(dx,dx),(dx,dx),(dx),(dx),(dx,dx),(dx)->(dx,dx),(dx)")
 def _sampling_init_one(F, Q, b, m, P, eps):
     inc_m, L, gain = mean_and_chol(F, Q, b, m, P)
-    inc = inc_m + jnp.einsum("ij,j->i", L, eps)
+    inc = inc_m + L @ eps
     return gain, inc
 
 
+@partial(jnp.vectorize, signature="(dx),(dx,dx),(dx)->(dx,dx),(dx)")
+def _sample_last_step(m, P, eps):
+    L = jnp.nan_to_num(jnp.linalg.cholesky(P))
+    last_sample = m + L @ eps
+    gain = jnp.zeros_like(P)
+    return gain, last_sample
+
+
 def _sampling_init(key, ms, Ps, Fs, Qs, bs):
-    T, d_x = ms.shape
-    epsilons = jax.random.normal(key, shape=(T, d_x))
+    epsilons = jax.random.normal(key, shape=ms.shape)
 
     gains, increments = jax.vmap(_sampling_init_one)(Fs, Qs, bs, ms[:-1], Ps[:-1], epsilons[:-1])
 
     # When we condition on the last step this is 0 and Cholesky ain't liking this.
-    last_L = jnp.nan_to_num(jnp.linalg.cholesky(Ps[-1]))
-    last_sample = ms[-1] + last_L @ epsilons[-1]
-
-    gains = jnp.append(gains, jnp.zeros((1, d_x, d_x)), 0)
-    increments = jnp.append(increments, last_sample[None, ...], 0)
+    last_gain, last_increment = _sample_last_step(ms[-1], Ps[-1], epsilons[-1])
+    gains = jnp.append(gains, last_gain[None, ...], 0)
+    increments = jnp.append(increments, last_increment[None, ...], 0)
     return gains, increments

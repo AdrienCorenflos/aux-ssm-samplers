@@ -1,3 +1,4 @@
+from functools import partial
 from typing import Tuple
 
 import jax
@@ -51,7 +52,7 @@ def _parallel_filtering(m0, P0, ys, Fs, Qs, bs, Hs, Rs, cs):
 
     *_, ell_increments = jax.vmap(sequential_predict_update)(ms[:-1], Ps[:-1], Fs, bs, Qs, y1T, H1T, c1T,
                                                              R1T)
-    ell = ell0 + jnp.sum(ell_increments)
+    ell = ell0 + jnp.sum(ell_increments, 0)
     return ms, Ps, ell
 
 
@@ -71,19 +72,9 @@ def _sequential_filtering(m0, P0, ys, Fs, Qs, bs, Hs, Rs, cs):
     return ms, Ps, ell
 
 
-# Sequential filtering ops
+#                                   y,    m,     P,     H,    c,    R,  ->  m,     P,  ell
+@partial(jnp.vectorize, signature='(dy),(dx),(dx,dx),(dy,dx),(dy),(dy,dy)->(dx),(dx,dx),()')
 def sequential_update(y, m, P, H, c, R):
-    if isinstance(y, tuple):
-        ell = 0.
-        for y_, H_, C_, R_ in zip(y, H, c, R):
-            m, P, ell_inc = sequential_update_one(y_, m, P, H_, C_, R_)
-            ell += ell_inc
-    else:
-        m, P, ell = sequential_update_one(y, m, P, H, c, R)
-    return m, P, ell
-
-
-def sequential_update_one(y, m, P, H, c, R):
     y_hat = H @ m + c
     y_diff = y - y_hat
     S = R + H @ P @ H.T
@@ -97,6 +88,8 @@ def sequential_update_one(y, m, P, H, c, R):
     return m, P, jnp.nan_to_num(ell_inc)
 
 
+#                                   m,     P,      F,     b,    Q,  ->  m,    P,
+@partial(jnp.vectorize, signature='(dx),(dx,dx),(dx,dx),(dx),(dx,dx)->(dx),(dx,dx)')
 def sequential_predict(m, P, F, b, Q):
     m = F @ m + b
     P = Q + F @ P @ F.T
@@ -104,6 +97,8 @@ def sequential_predict(m, P, F, b, Q):
     return m, P
 
 
+#                                   m,     P,      F,     b,    Q,     y,    H,     c,    R   ->  m,    P,   ell
+@partial(jnp.vectorize, signature='(dx),(dx,dx),(dx,dx),(dx),(dx,dx),(dy),(dy,dx),(dy),(dy,dy)->(dx),(dx,dx),()')
 def sequential_predict_update(m, P, F, b, Q, y, H, c, R):
     m, P = sequential_predict(m, P, F, b, Q)
     m, P, ell_inc = sequential_update(y, m, P, H, c, R)
@@ -115,6 +110,15 @@ def sequential_predict_update(m, P, F, b, Q, y, H, c, R):
 def _filtering_op(elem1, elem2):
     A1, b1, C1, eta1, J1 = elem1
     A2, b2, C2, eta2, J2 = elem2
+    return _filtering_op_impl(A1, b1, C1, eta1, J1, A2, b2, C2, eta2, J2)
+
+
+#                      A,    b,     C,   eta,   J
+_elem_signature = "(dx,dx),(dx),(dx,dx),(dx),(dx,dx)"
+_op_signature = _elem_signature + "," + _elem_signature + "->" + _elem_signature
+
+@partial(jnp.vectorize, signature=_op_signature)
+def _filtering_op_impl(A1, b1, C1, eta1, J1, A2, b2, C2, eta2, J2):
     dim = b1.shape[0]
 
     I_dim = jnp.eye(dim)
@@ -142,7 +146,8 @@ def _filtering_init(Fs, Qs, bs, Hs, Rs, cs, m0, P0, ys):
     return _filtering_init_one(Fs, Qs, bs, Hs, Rs, cs, ys, ms, Ps)
 
 
-@jax.vmap
+#                                     F,      Q,    b,     H,      R,     c,   y,  m,    P,
+@partial(jnp.vectorize, signature='(dx,dx),(dx,dx),(dx),(dy,dx),(dy,dy),(dy),(dy),(dx),(dx,dx)->' + _elem_signature)
 def _filtering_init_one(F, Q, b, H, R, c, y, m, P):
     m = F @ m + b
     P = F @ P @ F.T + Q
