@@ -2,6 +2,7 @@
 Divide and conquer sampling for LGSSMs.
 """
 import warnings
+from functools import partial
 
 import jax
 import jax.numpy as jnp
@@ -66,17 +67,28 @@ def sampling(key: PRNGKey, ms: Array, Ps: Array, lgssm: LGSSM) -> Array:
 
 
 def _sample(key, x1, x2, aux_elem):
+    eps = jax.random.normal(key, x1.shape)
     G, Gamma, w, V = aux_elem
     chol =jnp.linalg.cholesky(V)
-    mean = G @ x1 + Gamma @ x2 + w
-    out = rvs(key, mean, chol)
-    return out
+    mean = jnp.einsum("...ij,...j->...i", G, x1) + jnp.einsum("...ij,...j->...i", Gamma, x2) + w
+    return mean + jnp.einsum("...ij,...j->...i", chol, eps)
 
 
 def _combination_operator(elem1, elem2):
     E1, g1, L1 = elem1
     E2, g2, L2 = elem2
 
+    E, g, L, G, Gamma, w, V = _combination_operator_impl(E1, g1, L1, E2, g2, L2)
+
+    return (E, g, L), (G, Gamma, w, V)
+
+
+
+#                      E,    g,    L
+_elem_signature = "(dx,dx),(dx),(dx,dx)"
+_op_signature = _elem_signature + "," + _elem_signature + "->" + _elem_signature + ",(dx,dx)," + _elem_signature
+@partial(jnp.vectorize, signature=_op_signature)
+def _combination_operator_impl(E1, g1, L1, E2, g2, L2):
     E = E1 @ E2
     g = g1 + E1 @ g2
     L = L1 + E1 @ L2 @ E1.T
@@ -86,10 +98,10 @@ def _combination_operator(elem1, elem2):
     w = g2 - G @ g
     V = L2 - G @ L @ G.T
 
-    return (E, g, L), (G, Gamma, w, V)
+    return E, g, L, G, Gamma, w, V
 
 
-@jax.vmap
+@partial(jnp.vectorize, signature="(dx),(dx,dx),(dx,dx),(dx,dx),(dx)->(dx,dx),(dx),(dx,dx)")
 def _init_elems(m, P, F, Q, b):
     E = solve(F @ P @ F.T + Q, F @ P, assume_a="pos").T
     g = m - E @ (F @ m + b)
