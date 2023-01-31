@@ -6,27 +6,14 @@ import numpy as np
 from jax.scipy.stats import norm
 
 
-@partial(jax.jit, static_argnums=(5, 6))
-def get_data(key, nu, phi, tau, rho, dim, T):
-    m0, P0, F, Q, b = get_dynamics(nu, phi, tau, rho, dim)
+@partial(jax.jit, static_argnums=(4, 5))
+def get_data(key, tau, sigma_x, r_y, T, D):
+    path_key, obs_key = jax.random.split(key)
 
-    init_key, sampling_key = jax.random.split(key)
+    xs = sigma_x * jax.random.normal(path_key, shape=(T, D * D))
+    xs = jnp.cumsum(xs)
 
-    chol_P0 = jnp.linalg.cholesky(P0)
-    chol_Q = jnp.linalg.cholesky(Q)
-    x0 = m0 + chol_P0 @ jax.random.normal(init_key, (dim,))
-
-    def body(x_k, key_k):
-        state_key, observation_key = jax.random.split(key_k)
-
-        observation_scale = jnp.exp(0.5 * x_k)
-
-        y_k = observation_scale * jax.random.normal(observation_key, shape=(dim,))
-        x_kp1 = F @ x_k + b + chol_Q @ jax.random.normal(state_key, shape=(dim,))
-        return x_kp1, (x_k, y_k)
-
-    _, (xs, ys) = jax.lax.scan(body, x0, jax.random.split(sampling_key, T))
-    return xs, ys
+    return xs
 
 
 @partial(jax.jit, static_argnums=(4,))

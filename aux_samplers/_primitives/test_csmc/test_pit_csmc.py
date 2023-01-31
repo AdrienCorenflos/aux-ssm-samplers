@@ -4,9 +4,8 @@ import pytest
 from matplotlib import pyplot as plt
 from statsmodels.graphics.tsaplots import plot_acf
 
-from .common import GaussianDistribution, GaussianDynamics, lgssm_data, \
-    GaussianObservationPotential
-from ..csmc.base import CRNDistribution, CRNDynamics
+from .common import GaussianDistribution, GaussianDynamics, lgssm_data
+from ..csmc.base import CRNDistribution
 from ..csmc.pit import get_kernel, get_coupled_kernel
 
 
@@ -76,13 +75,10 @@ def test_coupled_csmc():
     M = 50_000  # get M - B samples from the particle Gibbs kernel
     B = M // 10  # Discard the first 10% of the samples
 
-
-
     Mt = GaussianDistribution(mu=true_ys, sig=SIG_Y * np.ones((T,)))
     cMt = CRNDistribution(dist_1=Mt, dist_2=Mt)
     G0 = GaussianDistribution(mu=0.0, sig=1.0)
     Gt = GaussianDynamics(rho=RHO, params=np.arange(T - 1))
-
 
     init, kernel = get_coupled_kernel(cMt, G0, G0, Gt, Gt, N=N)
 

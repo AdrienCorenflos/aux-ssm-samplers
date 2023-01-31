@@ -353,7 +353,6 @@ class CoupledAuxiliaryMtDistribution(CoupledDistribution):
     params_1: Array
     params_2: Array
 
-
     def sample(self, key, N):
         u_t_1, sqrt_half_delta, grad_t_1 = self.params_1
         u_t_2, _, grad_t_2 = self.params_2
@@ -406,8 +405,6 @@ class CoupledAuxiliaryMtDynamics(CoupledDynamics):
         keys = jax.random.split(key, x_t_1.shape[0])
         return jax.vmap(reflection, (0, 0, None, 0, None))(keys, mean_1, sqrt_half_delta, mean_2,
                                                            sqrt_half_delta)
-
-
 
 
 # Gt:

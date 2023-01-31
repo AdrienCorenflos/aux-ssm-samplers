@@ -253,7 +253,6 @@ def divide_and_conquer(key: PRNGKey, lgssm_1: LGSSM, lgssm_2: LGSSM, ms_1, Ps_1,
     return xs_1, xs_2, are_coupled
 
 
-
 def _mean_chol(x1, x2, aux_elem):
     G, Gamma, w, V = aux_elem
     chol = jnp.linalg.cholesky(V)

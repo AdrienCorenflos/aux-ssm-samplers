@@ -117,6 +117,7 @@ def _filtering_op(elem1, elem2):
 _elem_signature = "(dx,dx),(dx),(dx,dx),(dx),(dx,dx)"
 _op_signature = _elem_signature + "," + _elem_signature + "->" + _elem_signature
 
+
 @partial(jnp.vectorize, signature=_op_signature)
 def _filtering_op_impl(A1, b1, C1, eta1, J1, A2, b2, C2, eta2, J2):
     dim = b1.shape[0]

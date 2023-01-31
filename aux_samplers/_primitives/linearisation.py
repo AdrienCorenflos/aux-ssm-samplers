@@ -8,7 +8,6 @@ from chex import ArrayTree, Array
 from jax.scipy.linalg import cho_solve
 
 
-
 def extended(mean: Callable, cov: Callable, params: Optional[ArrayTree], x_star: Array, _P_star):
     """
     First order extended linearisation. TODO: extend to second order.
@@ -106,7 +105,7 @@ def cubature(mean: Callable, cov: Callable, params: Optional[ArrayTree], x_star:
 
 
 def _generic_sigma_points(mean, cov, params, x_star, P_star, get_sigma_points):
-    chol =jnp.linalg.cholesky(P_star)
+    chol = jnp.linalg.cholesky(P_star)
     dim = x_star.shape[0]
     w, xi = get_sigma_points(dim)
     points = x_star[None, :] + jnp.dot(chol, xi).T

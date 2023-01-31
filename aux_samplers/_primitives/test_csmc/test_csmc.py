@@ -3,23 +3,21 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 from matplotlib import pyplot as plt
+from statsmodels.graphics.tsaplots import plot_acf
 
 from .common import GaussianDistribution, FlatPotential, FlatUnivariatePotential, GaussianDynamics, lgssm_data, \
     GaussianObservationPotential
-
-from statsmodels.graphics.tsaplots import plot_acf
-
-from ..csmc.base import CRNDistribution, CRNDynamics
 from ..csmc import get_kernel, get_coupled_kernel
+from ..csmc.base import CRNDistribution, CRNDynamics
 
 
 @pytest.fixture(scope="module", autouse=True)
 def jax_config():
     jax.config.update("jax_platform_name", "cpu")
 
+
 @pytest.mark.parametrize("backward", [True, False])
 def test_flat_potential(backward):
-
     # Test a flat potential, to check that we recover the prior.
     # The model is a stationary AR process with Gaussian noise.
     JAX_KEY = jax.random.PRNGKey(0)
@@ -54,7 +52,7 @@ def test_flat_potential(backward):
     fig.suptitle("Backward: {}".format(backward))
     plot_acf(xs[:, 0], ax=axes[0])
     axes[0].set_title("ACF of x_0")
-    plot_acf(xs[:, T//2], ax=axes[1])
+    plot_acf(xs[:, T // 2], ax=axes[1])
     axes[1].set_title("ACF of x_T/2")
     plt.show()
 
@@ -72,10 +70,8 @@ def test_flat_potential(backward):
     npt.assert_allclose(sub_cov_diag, RHO, atol=atol)
 
 
-
 @pytest.mark.parametrize("backward", [True, False])
 def test_lgssm(backward):
-
     # Test a LGSSM model test
     JAX_KEY = jax.random.PRNGKey(0)
 
@@ -112,7 +108,7 @@ def test_lgssm(backward):
     fig.suptitle("Backward: {}".format(backward))
     plot_acf(xs[:, 0], ax=axes[0])
     axes[0].set_title("ACF of x_0")
-    plot_acf(xs[:, T//2], ax=axes[1])
+    plot_acf(xs[:, T // 2], ax=axes[1])
     axes[1].set_title("ACF of x_T/2")
     plot_acf(xs[:, -1], ax=axes[2])
     axes[2].set_title("ACF of x_T")
@@ -124,7 +120,6 @@ def test_lgssm(backward):
 
 @pytest.mark.parametrize("backward", [True, False])
 def test_coupled_csmc(backward):
-
     # The model is a stationary AR process with Gaussian noise.
     JAX_KEY = jax.random.PRNGKey(0)
 

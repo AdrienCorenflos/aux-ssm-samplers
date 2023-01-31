@@ -10,6 +10,7 @@ from jaxtyping import Float, Array
 _MIN_LOGPDF = -300
 _MAX_LOGPDF = 300
 
+
 @partial(jnp.vectorize, signature="(n),(n),(n,n)->()")
 def logpdf(
         x: Float[Array, "dim"], m: Float[Array, "dim"], chol: Float[Array, "dim dim"]

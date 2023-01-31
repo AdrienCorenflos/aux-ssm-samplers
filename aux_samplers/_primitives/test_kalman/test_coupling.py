@@ -137,7 +137,6 @@ def test_batched_model(seed, T, dx, dy, mode, method):
     cs = np.reshape(bcs, (T, B * dy))
     ys = np.reshape(bys, (T, B * dy))
 
-
     lgssm_1 = LGSSM(m0, P0, Fs_1, Qs_1, bs_1, Hs, Rs, cs)
     lgssm_2 = LGSSM(m0, P0, Fs_2, Qs_2, bs_2, Hs, Rs, cs)
     batched_lgssm_1 = LGSSM(bm0, bP0, bFs_1, bQs_1, bbs_1, bHs, bRs, bcs)
@@ -150,10 +149,12 @@ def test_batched_model(seed, T, dx, dy, mode, method):
 
     if mode == "dnc":
         sampling_fn = lambda key: divide_and_conquer(key, lgssm_1, lgssm_2, ms_1, Ps_1, ms_2, Ps_2, method=method)
-        batched_sampling_fn = lambda key: divide_and_conquer(key, batched_lgssm_1, batched_lgssm_2, bms_1, bPs_1, bms_2, bPs_2, method=method)
+        batched_sampling_fn = lambda key: divide_and_conquer(key, batched_lgssm_1, batched_lgssm_2, bms_1, bPs_1, bms_2,
+                                                             bPs_2, method=method)
     elif mode == "sequential":
         sampling_fn = lambda key: progressive(key, lgssm_1, lgssm_2, ms_1, Ps_1, ms_2, Ps_2, method=method)
-        batched_sampling_fn = lambda key: progressive(key, batched_lgssm_1, batched_lgssm_2, bms_1, bPs_1, bms_2, bPs_2, method=method)
+        batched_sampling_fn = lambda key: progressive(key, batched_lgssm_1, batched_lgssm_2, bms_1, bPs_1, bms_2, bPs_2,
+                                                      method=method)
     else:
         raise ValueError("Unknown mode.")
     samples_1, samples_2, coupled_index = jax.vmap(sampling_fn)(sampling_keys)
@@ -179,4 +180,3 @@ def test_batched_model(seed, T, dx, dy, mode, method):
     npt.assert_allclose(mean_samples_2, mean_batched_samples_2, atol=1e-2, rtol=1e-2)
     npt.assert_allclose(std_samples_1, std_batched_samples_1, atol=1e-2, rtol=1e-2)
     npt.assert_allclose(std_samples_2, std_batched_samples_2, atol=1e-2, rtol=1e-2)
-

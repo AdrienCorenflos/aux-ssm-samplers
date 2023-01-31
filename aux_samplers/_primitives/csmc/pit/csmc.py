@@ -2,7 +2,6 @@
 Implements the parallel-in-time cSMC kernel from Corenflos et al. (2022). Reimplemented from the original code in order
 to preserve a common API feel in this library (to some extent).
 """
-import math
 from typing import Optional
 
 import jax
@@ -77,7 +76,6 @@ def _csmc(key, x_star, Mt, G0, Gt, N, Qt):
 
     # Replace the first particle with the star trajectory
     xs = xs.at[:, 0].set(x_star)
-
 
     # Compute initial weights and normalize
     # FIXME: I am not sure where the logweights of the proposal should live. In the operator or here? Theoretically, no diff,

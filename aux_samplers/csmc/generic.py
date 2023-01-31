@@ -9,8 +9,7 @@ from jax import numpy as jnp
 
 from .._primitives.base import CoupledSamplerState
 from .._primitives.csmc import get_kernel as get_standard_kernel, get_coupled_kernel as get_standard_coupled_kernel
-from .._primitives.csmc.base import Distribution, UnivariatePotential, Dynamics, Potential, CSMCState, CRNDistribution, \
-    CRNDynamics
+from .._primitives.csmc.base import Distribution, UnivariatePotential, Dynamics, Potential, CSMCState
 from .._primitives.math.mvn.couplings import lindvall_roger
 
 
@@ -115,8 +114,6 @@ def _get_coupled_kernel(
         _, auxiliary_kernel = get_standard_coupled_kernel(cm0, g0_1, g0_2, cmt, gt_1, gt_2, N, backward=backward,
                                                           Pt_1=Pt, Pt_2=Pt)
         return auxiliary_kernel(key, state)
-
-
 
     def init(x_1, x_2):
         T, *_ = x_1.shape

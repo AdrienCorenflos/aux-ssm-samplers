@@ -2,6 +2,7 @@ import jax
 import numpy as np
 import numpy.testing as npt
 import pytest
+
 from .linearisation import extended, gauss_hermite, cubature
 
 
@@ -43,4 +44,3 @@ def test_linear():
     np.testing.assert_allclose(F_e, A)
     np.testing.assert_allclose(Q_e, Q)
     np.testing.assert_allclose(b_e, b)
-

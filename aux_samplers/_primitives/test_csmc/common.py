@@ -49,7 +49,6 @@ class GaussianDistribution(Distribution, UnivariatePotential):
         return self.logpdf(x)
 
 
-
 @chex.dataclass
 class GaussianObservationPotential(Potential):
     sig: float = 1.0

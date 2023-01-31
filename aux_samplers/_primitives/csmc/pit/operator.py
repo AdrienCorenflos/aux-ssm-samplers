@@ -26,7 +26,7 @@ from typing import Any, Callable, Tuple
 
 import jax
 import jax.numpy as jnp
-from chex import ArrayTree, Array
+from chex import ArrayTree
 from jax import tree_map, vmap
 from jax.scipy.special import logsumexp
 
@@ -151,7 +151,6 @@ def coupled_operator(inputs_a: Tuple[STATE, STATE], inputs_b: Tuple[STATE, STATE
         idx_1, idx_2, _ = coupled_multinomial(keys_b_1[0], p_1, p_2, n_samples)
         l_idx_1, r_idx_1 = jax.vmap(jnp.unravel_index, in_axes=[0, None])(idx_1, (n_samples, n_samples))
         l_idx_2, r_idx_2 = jax.vmap(jnp.unravel_index, in_axes=[0, None])(idx_2, (n_samples, n_samples))
-
 
     outputs_1 = _gather_results(l_idx_1, r_idx_1, n_samples,
                                 trajectories_a_1, origins_a_1, log_weights_a_1, keys_a_1, params_a_1,

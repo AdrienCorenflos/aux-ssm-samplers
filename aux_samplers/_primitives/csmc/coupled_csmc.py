@@ -48,7 +48,7 @@ def get_coupled_kernel(cM0: CoupledDistribution, G0_1: UnivariatePotential, G0_2
     if backward and (Pt_1 is None or Pt_2 is None):
         raise ValueError("If `backward` is True, `Pt_1` and `Pt_2` must be specified.")
 
-    def kernel(key, coupled_state:CoupledSamplerState):
+    def kernel(key, coupled_state: CoupledSamplerState):
         key_fwd, key_bwd = jax.random.split(key)
         state_1, state_2, coupled_flags = coupled_state.state_1, coupled_state.state_2, coupled_state.flags
         w_1_T, xs_1, log_ws_1, As_1, w_2_T, xs_2, log_ws_2, As_2, coupled_flags = _ccsmc(key_fwd,
@@ -63,7 +63,8 @@ def get_coupled_kernel(cM0: CoupledDistribution, G0_1: UnivariatePotential, G0_2
                                                                                                 xs_1, xs_2, As_1, As_2,
                                                                                                 coupled_flags)
         else:
-            x_1, ancestors_1, x_2, ancestors_2, coupled_flags = _coupled_backward_sampling_pass(key_bwd, Pt_1, Pt_2, w_1_T,
+            x_1, ancestors_1, x_2, ancestors_2, coupled_flags = _coupled_backward_sampling_pass(key_bwd, Pt_1, Pt_2,
+                                                                                                w_1_T,
                                                                                                 w_2_T, xs_1, xs_2,
                                                                                                 log_ws_1, log_ws_2,
                                                                                                 coupled_flags)
@@ -180,7 +181,8 @@ def _coupled_backward_scanning_pass(key, w_1_T, w_2_T, xs_1, xs_2, As_1, As_2, c
     return xs_1[::-1], Bs_1[::-1], xs_2[::-1], Bs_2[::-1], coupled_flags[::-1]
 
 
-def _coupled_backward_sampling_pass(key, Pt_1: Dynamics, Pt_2:Dynamics, w_1_T, w_2_T, xs_1, xs_2, log_ws_1, log_ws_2, coupled_flags):
+def _coupled_backward_sampling_pass(key, Pt_1: Dynamics, Pt_2: Dynamics, w_1_T, w_2_T, xs_1, xs_2, log_ws_1, log_ws_2,
+                                    coupled_flags):
     """JAX implementation of the coupled backward sampling pass."""
     T = xs_1.shape[0]
     keys = jax.random.split(key, T)

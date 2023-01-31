@@ -100,4 +100,3 @@ def test_on_laplace(dim):
               color="k", label="True value", linestyle="-", linewidth=3)
     ax.legend(loc="upper right")
     plt.show()
-

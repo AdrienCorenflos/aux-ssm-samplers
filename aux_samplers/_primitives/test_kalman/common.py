@@ -52,8 +52,8 @@ def explicit_kalman_filter(ys, m0, P0, Hs, Rs, cs, Fs, Qs, bs):
 
     for t in range(1, T):
         # Prediction
-        m = Fs[t-1] @ ms[t - 1] + bs[t-1]
-        P = Fs[t-1] @ Ps[t - 1] @ Fs[t-1].T + Qs[t-1]
+        m = Fs[t - 1] @ ms[t - 1] + bs[t - 1]
+        P = Fs[t - 1] @ Ps[t - 1] @ Fs[t - 1].T + Qs[t - 1]
 
         # Update
         S = Hs[t] @ P @ Hs[t].T + Rs[t]

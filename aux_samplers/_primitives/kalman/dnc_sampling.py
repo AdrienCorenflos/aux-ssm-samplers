@@ -46,7 +46,7 @@ def sampling(key: PRNGKey, ms: Array, Ps: Array, lgssm: LGSSM) -> Array:
 
     # Sample from the last time step
     xs = jnp.zeros_like(ms)
-    chol_T =jnp.linalg.cholesky(Ps[-1])
+    chol_T = jnp.linalg.cholesky(Ps[-1])
     x_T = rvs(key_T, ms[-1], chol_T)
     xs = xs.at[-1].set(x_T)
 
@@ -55,7 +55,7 @@ def sampling(key: PRNGKey, ms: Array, Ps: Array, lgssm: LGSSM) -> Array:
 
     # Sample from x0 | xT
     m0 = E_0T[0] @ x_T + g_0T[0]
-    chol_0T =jnp.linalg.cholesky(L_0T[0])
+    chol_0T = jnp.linalg.cholesky(L_0T[0])
     x0 = rvs(key_0, m0, chol_0T)
     xs = xs.at[0].set(x0)
 
@@ -71,7 +71,7 @@ def sampling(key: PRNGKey, ms: Array, Ps: Array, lgssm: LGSSM) -> Array:
 def _sample(key, x1, x2, aux_elem):
     eps = jax.random.normal(key, x1.shape)
     G, Gamma, w, V = aux_elem
-    chol =jnp.linalg.cholesky(V)
+    chol = jnp.linalg.cholesky(V)
     mean = jnp.einsum("...ij,...j->...i", G, x1) + jnp.einsum("...ij,...j->...i", Gamma, x2) + w
     return mean + jnp.einsum("...ij,...j->...i", chol, eps)
 
@@ -85,10 +85,11 @@ def _combination_operator(elem1, elem2):
     return (E, g, L), (G, Gamma, w, V)
 
 
-
 #                      E,    g,    L
 _elem_signature = "(dx,dx),(dx),(dx,dx)"
 _op_signature = _elem_signature + "," + _elem_signature + "->" + _elem_signature + ",(dx,dx)," + _elem_signature
+
+
 @partial(jnp.vectorize, signature=_op_signature)
 def _combination_operator_impl(E1, g1, L1, E2, g2, L2):
     E = E1 @ E2

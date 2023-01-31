@@ -5,6 +5,7 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 from scipy.linalg import block_diag
+
 from .common import explicit_kalman_filter
 from ..kalman.base import LGSSM
 from ..kalman.filtering import filtering
@@ -86,7 +87,6 @@ def test_batched_model(seed, T, dx, dy, parallel):
     Rs = batched_block_diag(bRs)
     cs = np.reshape(bcs, (T, B * dy))
     ys = np.reshape(bys, (T, B * dy))
-
 
     batched_lgssm = LGSSM(bm0, bP0, bFs, bQs, bbs, bHs, bRs, bcs)
     lgssm = LGSSM(m0, P0, Fs, Qs, bs, Hs, Rs, cs)

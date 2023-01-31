@@ -1,8 +1,9 @@
 """Test file for resampling methods."""
 import jax
 import jax.numpy as jnp
-import numpy.testing as npt
 import numpy as np
+import numpy.testing as npt
+
 from aux_samplers._primitives.csmc.resamplings import multinomial, coupled_multinomial
 
 

@@ -112,7 +112,6 @@ def get_K(Q, scale):
     return solve((Q + scale ** 2 * jnp.eye(d)), Q, assume_a="pos").T
 
 
-
 @partial(jnp.vectorize, signature="(d),(d,d),(d,d),(d),(d),(),(d)->(d),(d,d)", excluded=(7,))
 def get_mu_chol_Lambda_t(x, F, Q, b, u, scale, y, grad):
     d = x.shape[0]
@@ -131,7 +130,7 @@ def get_mu_chol_Lambda_t(x, F, Q, b, u, scale, y, grad):
 
     # When scale is too small, the covariance matrix Lambda_t can numerically be singular.
     chol_Lambda_t = jnp.where(jnp.isfinite(chol_Lambda_t), chol_Lambda_t,
-                       scale * jnp.eye(d))
+                              scale * jnp.eye(d))
 
     return mu_t, chol_Lambda_t
 

@@ -15,6 +15,7 @@ Please implement this function or choose the standard cSMC with no backward pass
 
 _EPS = 1e-10
 
+
 @dataclass
 class CSMCState(SamplerState):
     x: ArrayTree
@@ -108,7 +109,6 @@ class CoupledDynamics(abc.ABC):
 class CRNDistribution(CoupledDistribution):
     dist_1: Distribution
     dist_2: Distribution
-
 
     def sample(self, key, N):
         x1 = self.dist_1.sample(key, N)

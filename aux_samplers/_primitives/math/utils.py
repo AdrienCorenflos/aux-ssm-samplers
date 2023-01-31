@@ -3,7 +3,6 @@ from functools import partial
 
 import jax
 import jax.numpy as jnp
-from jax.scipy.linalg import svd
 
 LOG_HALF = math.log(0.5)
 
