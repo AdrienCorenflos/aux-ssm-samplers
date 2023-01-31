@@ -66,14 +66,14 @@ def get_kernel(dynamics_factory,
     if not coupled:
         return _get_kernel(dynamics_factory, observations_factory, log_likelihood_fn, parallel)
     else:
-        return _get_coupled_kernel(dynamics_factory, observations_factory, log_likelihood_fn, parallel, **coupled_kwargs)
+        return _get_coupled_kernel(dynamics_factory, observations_factory, log_likelihood_fn, parallel,
+                                   **coupled_kwargs)
 
 
 def _get_kernel(dynamics_factory,
                 observations_factory,
                 log_likelihood_fn,
                 parallel):
-
     def kernel(key, state, delta):
         # Housekeeping
         x = state.x
@@ -134,9 +134,14 @@ def _get_coupled_kernel(dynamics_factory,
         T = x_1.shape[0]
 
         # Auxiliary observations
-        mvn_coupling = lambda k, a, b: lindvall_roger(k, a, b, sqrt_half_delta, sqrt_half_delta)
+        def mvn_coupling(k, a, b):
+            # Wrapper in case the model is batched
+            out_1, out_2, _ = lindvall_roger(k, jnp.ravel(a), jnp.ravel(b), sqrt_half_delta, sqrt_half_delta)
+            out_1, out_2 = jnp.reshape(out_1, a.shape), jnp.reshape(out_2, b.shape)
+            return out_1, out_2
+
         aux_keys = jax.random.split(auxiliary_key, T)
-        u_1, u_2, _ = jax.vmap(mvn_coupling)(aux_keys, x_1, x_2)
+        u_1, u_2 = jax.vmap(mvn_coupling)(aux_keys, x_1, x_2)
 
         # Propose new states
         log_lgssm_prop_1, log_lgssm_prop_2, log_target_prop_1, log_target_prop_2, x_prop_1, x_prop_2, coupled_ts = do_one(

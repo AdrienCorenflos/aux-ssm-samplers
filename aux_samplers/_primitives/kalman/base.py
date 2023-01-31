@@ -3,8 +3,8 @@ from typing import NamedTuple
 import jax
 import jax.numpy as jnp
 from chex import Numeric
-from ..base import Array
 
+from ..base import Array
 from ..math import logpdf
 
 
@@ -25,7 +25,28 @@ class LGSSM(NamedTuple):
 
     """
     NamedTuple encapsulating the parameters of the LGSSM.
-
+    For a generic LGSSM, the shapes of the parameters are:
+    m0: (dx,)
+    P0: (dx, dx)
+    Fs: (T-1, dx, dx)
+    Qs: (T-1, dx, dx)
+    bs: (T-1, dx)
+    Hs: (T, dy, dx)
+    Rs: (T, dy, dy)
+    cs: (T, dy)
+    and the corresponding observation will need to be given as (T, dy).
+    
+    For the special case of batched (independent along the batch dimension) LGSSMs, the shapes of the parameters are:
+    m0: (B, dx)
+    P0: (B, dx, dx)
+    Fs: (T-1, B, dx, dx)
+    Qs: (T-1, B, dx, dx)
+    bs: (T-1, B, dx)
+    Hs: (T, B, dy, dx)
+    Rs: (T, B, dy, dy)
+    cs: (T, B, dy)
+    and the corresponding observation will need to be given as (T, B, dy).
+    
     Attributes
     ----------
     m0 : Array
