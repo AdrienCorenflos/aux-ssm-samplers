@@ -1,67 +1,70 @@
 from functools import partial
 
 import jax
-import jax.numpy as jnp
+import numba as nb
 import numpy as np
-from jax.scipy.stats import norm
+from jax.experimental.sparse.bcoo import BCOO
+
+
+def make_chol_precision(tau, r_y, d):
+    """
+    Makes the sparse Cholesky decomposition for the precision matrix of the model.
+
+    The resulting precision will be given as tau^D((i,j),(i',j')) if D((i,j),(i',j')) < r_y, 0 otherwise, for
+    D((i,j),(i',j')) = |i-i'| + |j-j'|.
+
+    Parameters
+    ----------
+    tau : float
+        The parameter used for filling the matrix.
+    r_y : float
+        The radius of the spatial correlation in terms of Hamming ball.
+    d : int
+        The dimension of the grid. The resulting matrix will be d^2 x d^2 albeit sparse.
+
+    Returns
+    -------
+    prec : BCOO
+        The sparse precision matrix.
+
+    Examples:
+    ---------
+    >>> tau = -0.25
+    >>> r_y = 1
+    >>> d = 4
+    >>> coo = make_precision(tau, r_y, d)
+    >>> coo.todense().shape
+    Array([[ 1.  , -0.25, -0.25,  0.  ],
+           [-0.25,  1.  ,  0.  , -0.25],
+           [-0.25,  0.  ,  1.  , -0.25],
+           [ 0.  , -0.25, -0.25,  1.  ]], dtype=float32)
+    """
+
+    data, indices = _make_precision_np(tau, r_y, d)
+    prec = BCOO((data, indices), shape=(d ** 2, d ** 2))  # type: ignore
+    return prec
+
+@nb.njit
+def _make_precision_np(tau: float, r_y: float, d: int):
+    data = []
+    indices = []
+
+    for i in range(d):
+        for j in range(d):
+            for k in range(d):
+                for l in range(d):
+                    D_val = abs(i - k) + abs(j - l)
+                    if D_val <= r_y:
+                        data.append(tau ** D_val)
+                        indices.append([i * d + j, k * d + l])
+
+    data = np.array(data)
+    indices = np.array(indices, dtype=np.int_)
+    return data, indices
 
 
 @partial(jax.jit, static_argnums=(4, 5))
-def get_data(key, tau, sigma_x, r_y, T, D):
-    path_key, obs_key = jax.random.split(key)
-
-    xs = sigma_x * jax.random.normal(path_key, shape=(T, D * D))
-    xs = jnp.cumsum(xs)
-
-    return xs
+def get_data(key, sigma_x, r_y, tau, d, T):
+    pass
 
 
-@partial(jax.jit, static_argnums=(4,))
-def get_dynamics(nu, phi, tau, rho, dim):
-    F = phi * jnp.eye(dim)
-    Q = stationary_covariance(phi, tau, rho, dim)
-    mu = nu * jnp.ones((dim,))
-    b = mu + F @ mu
-
-    m0 = mu
-    P0 = Q
-    return m0, P0, F, Q, b
-
-
-@partial(jax.jit, static_argnums=(3,))
-def stationary_covariance(phi, tau, rho, dim):
-    U = tau * rho * jnp.ones((dim, dim))
-    U = U.at[np.diag_indices(dim)].set(tau)
-    vec_U = jnp.reshape(U, (dim ** 2, 1))
-    vec_U_star = vec_U / (1 - phi ** 2)
-    U_star = jnp.reshape(vec_U_star, (dim, dim))
-    return U_star
-
-
-@jax.jit
-def log_potential(xs, ys):
-    vals = jax.vmap(_log_potential_one)(xs, ys)
-    return jnp.sum(vals)
-
-
-@jax.jit
-def grad_log_potential(xs, ys):
-    return jax.grad(log_potential)(xs, ys)
-
-
-@jax.jit
-def hess_log_potential(xs, ys):
-    out = jax.vmap(_hess_log_potential_one)(xs, ys)
-    return jnp.diag(out)
-
-
-@jax.jit
-def _log_potential_one(x, y):
-    scale = jnp.exp(0.5 * x)
-    val = norm.logpdf(y, scale=scale)
-    return jnp.nan_to_num(val)  # in case the scale is infinite, we get nan, but we want 0
-
-
-@jax.jit
-def _hess_log_potential_one(x, y):
-    return jax.grad(jax.grad(_log_potential_one))(x, y)
