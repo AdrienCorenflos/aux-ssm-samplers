@@ -1,14 +1,14 @@
 from functools import partial
 
 import jax
-from chex import Array
-from jax.experimental.sparse import BCOO
 import jax.numpy as jnp
-from jax import pure_callback
+from chex import Array, ArrayTree, PRNGKey
+from jax.experimental.sparse import BCOO
 from jax.scipy.linalg import solve_triangular, cholesky
 
+
 @partial(jnp.vectorize, signature="(k),(d),()->(d)", excluded=(3,))
-def sample(key, mu:Array, nu:float, prec: BCOO):
+def sample(key: PRNGKey, mu: Array, nu: float, prec: ArrayTree):
     """
     Samples from a multivariate t-distribution.
 
@@ -49,14 +49,14 @@ def sample(key, mu:Array, nu:float, prec: BCOO):
     key, subkey = jax.random.split(key)
     eps = jax.random.normal(key, shape=mu.shape)
     # This "to dense" is not ideal, but it's the only way to do it with the current API.
-    chol_prec = cholesky(prec.todense(), lower=False)
+    chol_prec = cholesky(prec.todense(), lower=False)  # type: ignore
     y = solve_triangular(chol_prec, eps, lower=False)
     u = 2 * jax.random.gamma(subkey, 0.5 * nu) / nu
     return mu + jnp.sqrt(1 / u) * y
 
 
 @jax.jit
-def log_pdf(x:Array, mu:Array, nu:float, prec: BCOO):
+def logpdf(x: Array, mu: Array, nu: float, prec: BCOO):
     """
     Computes the (unnormalised) log-likelihood of a multivariate t-distribution at x.
 
@@ -85,7 +85,7 @@ def log_pdf(x:Array, mu:Array, nu:float, prec: BCOO):
     >>> prec = np.array([[1, 0.2],
     ...                  [0.2, 1]])
     >>> coo_prec = jax.experimental.sparse.COO.fromdense(prec)
-    >>> actual = log_pdf(xs, mu, 3, coo_prec)
+    >>> actual = logpdf(xs, mu, 3, coo_prec)
     >>> expected = multivariate_t.logpdf(xs, loc=mu, df=3, shape=np.linalg.inv(prec))
     >>> ratio = np.exp(actual - expected)
     >>> np.allclose(ratio, ratio.mean(), atol=1e-5)
