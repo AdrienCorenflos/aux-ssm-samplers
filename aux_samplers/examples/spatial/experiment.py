@@ -7,10 +7,10 @@ import tqdm.auto as tqdm
 from jax.tree_util import tree_map
 
 from aux_samplers.common import delta_adaptation
-# from auxiliary_csmc import get_kernel as get_csmc_kernel
-# from auxiliary_guided_csmc import get_kernel as get_guided_csmc_kernel
+from auxiliary_csmc import get_kernel as get_csmc_kernel
+from auxiliary_guided_csmc import get_kernel as get_guided_csmc_kernel
 from auxiliary_kalman import get_kernel as get_kalman_kernel
-from model import get_data, get_dynamics, make_precision
+from model import get_data, get_dynamics, make_precision, init_x_fn
 
 # ARGS PARSING
 
@@ -18,7 +18,7 @@ parser = argparse.ArgumentParser("Run a Spatio-temporal experiment")
 # General arguments
 parser.add_argument('--parallel', action='store_true')
 parser.add_argument('--no-parallel', dest='parallel', action='store_false')
-parser.set_defaults(parallel=False)
+parser.set_defaults(parallel=True)
 parser.add_argument('--debug', action='store_true')
 parser.add_argument('--no-debug', dest='debug', action='store_false')
 parser.set_defaults(debug=False)
@@ -27,27 +27,28 @@ parser.add_argument('--no-debug-nans', dest='debug_nans', action='store_false')
 parser.set_defaults(debug_nans=False)
 parser.add_argument('--gpu', action='store_true')
 parser.add_argument('--no-gpu', dest='gpu', action='store_false')
-parser.set_defaults(gpu=False)
+parser.set_defaults(gpu=True)
 parser.add_argument('--verbose', action='store_true')
 parser.add_argument('--no-verbose', dest='verbose', action='store_false')
 parser.set_defaults(verbose=True)
 
 # Experiment arguments
 parser.add_argument("--n-experiments", dest="n_experiments", type=int, default=10)
-parser.add_argument("--T", dest="T", type=int, default=100)
-parser.add_argument("--D", dest="D", type=int, default=32)
+parser.add_argument("--T", dest="T", type=int, default=2 ** 8)
+parser.add_argument("--D", dest="D", type=int, default=16)
 parser.add_argument("--NU", dest="NU", type=int, default=1)
-parser.add_argument("--n-samples", dest="n_samples", type=int, default=10_000)
-parser.add_argument("--burnin", dest="burnin", type=int, default=5_000)
-parser.add_argument("--target-alpha", dest="target_alpha", type=float, default=0.5)
-parser.add_argument("--lr", dest="lr", type=float, default=0.5)
-parser.add_argument("--beta", dest="beta", type=int, default=0.05)
-parser.add_argument("--delta-init", dest="delta_init", type=float, default=1e-6)
+parser.add_argument("--n-samples", dest="n_samples", type=int, default=25_000)
+parser.add_argument("--burnin", dest="burnin", type=int, default=10_000)
+parser.add_argument("--target-alpha", dest="target_alpha", type=float,
+                    default=0.5)
+parser.add_argument("--lr", dest="lr", type=float, default=0.1)
+parser.add_argument("--beta", dest="beta", type=float, default=0.05)
+parser.add_argument("--delta-init", dest="delta_init", type=float, default=1e-3)
 parser.add_argument("--seed", dest="seed", type=int, default=1234)
-parser.add_argument("--style", dest="style", type=str, default="kalman")
+parser.add_argument("--style", dest="style", type=str, default="kalman-2")
 parser.add_argument("--gradient", action='store_true')
 parser.add_argument('--no-gradient', dest='gradient', action='store_false')
-parser.set_defaults(gradient=False)
+parser.set_defaults(gradient=True)
 parser.add_argument("--backward", action='store_true')
 parser.add_argument('--no-backward', dest='backward', action='store_false')
 parser.set_defaults(backward=True)
@@ -70,17 +71,14 @@ TAU = -0.25
 m0, P0, F, Q, b = get_dynamics(SIGMA_X, args.D)
 PREC = make_precision(TAU, RY, args.D)
 
-if args.style != "kalman":
-    args.target_alpha = 1 - (1 + args.N) ** (-1 / 3)
-elif args.style == "csmc" and args.parallel:
-    # More conservative target alpha for parallel cSMC. This is perhaps an artifact of the warmup, but it's not clear.
-    args.target_alpha = 0.33
-
 
 # STATS FN
 def stats_fn(x_1, x_2):
     # squared jumping distance averaged across dimensions, and first and second moments
-    return jnp.mean((x_2 - x_1) ** 2, (-2, -1)), x_2, x_2 ** 2
+    if "kalman" in args.style:
+        return jnp.mean((x_2 - x_1) ** 2, (-2, -1)), x_2[..., 0], x_2[..., 0] ** 2
+    else:
+        return jnp.mean((x_2 - x_1) ** 2, -1), x_2, x_2 ** 2
 
 
 # KERNEL
@@ -88,10 +86,11 @@ def loop(key, init_delta, init_state, kernel_fn, delta_fn, n_iter, verbose=False
     from datetime import datetime
     keys = jax.random.split(key, n_iter)
 
-    print_func = lambda z, *_: print(f"\riteration: {z[0]}, current time: {datetime.now().strftime('%H:%M:%S')}, "
-                                     f"min_delta: {z[1]:.2e}, max_delta: {z[2]:.2e}, "
-                                     f"min_window_accept: {z[3]:.1%},  max_window_accept: {z[4]:.1%}, "
-                                     f"min_accept: {z[5]:.1%}, max_accept: {z[6]:.1%},", end="")
+    print_func = lambda z, *_: print(f"\riteration: {z[0]}, time: {datetime.now().strftime('%H:%M:%S')}, "
+                                     f"min_δ: {z[1]:.2e}, max_δ: {z[2]:.2e}, "
+                                     f"min_w_accept: {z[3]:.1%},  max_w_accept: {z[4]:.1%}, "
+                                     f"min_accept: {z[5]:.1%}, max_accept: {z[6]:.1%}, "
+                                     f"min_esjd: {z[7]:.2e}, max_esjd: {z[8]:.2e}", end="")
 
     def body_fn(carry, key_inp):
         from jax.experimental.host_callback import id_tap
@@ -101,6 +100,7 @@ def loop(key, init_delta, init_state, kernel_fn, delta_fn, n_iter, verbose=False
                                 jnp.min(delta), jnp.max(delta),
                                 jnp.min(window_avg_acceptance), jnp.max(window_avg_acceptance),
                                 jnp.min(avg_acceptance), jnp.max(avg_acceptance),
+                                jnp.min(stats[0]), jnp.max(stats[0]),
                                 ), result=None)
 
         next_state = kernel_fn(key_inp, state, delta)
@@ -125,21 +125,27 @@ def loop(key, init_delta, init_state, kernel_fn, delta_fn, n_iter, verbose=False
     return out
 
 
-def _one_experiment(xs_init, ys, burnin_key, sample_key, verbose=args.verbose):
+def _one_experiment(ys, init_key, burnin_key, sample_key, verbose=args.verbose):
     # KERNEL
-    if args.style == "kalman":
+    if args.style in {"kalman-1", "kalman"}:
         init_fn, kernel_fn = get_kalman_kernel(ys, m0, P0, F, Q, b, args.parallel, (args.NU, PREC))
         delta_init = args.delta_init
-    # elif args.style == "csmc":
-    #     init_fn, kernel_fn = get_csmc_kernel(ys, m0, P0, F, Q, b, args.N, args.backward, args.parallel, args.gradient)
-    #     delta_init = args.delta_init * jnp.ones((args.T,))
-    # elif args.style == "csmc-guided":
-    #     init_fn, kernel_fn = get_guided_csmc_kernel(ys, m0, P0, F, Q, b, args.N, args.backward, args.gradient)
-    #     delta_init = args.delta_init * jnp.ones((args.T,))
+    elif args.style == "kalman-2":
+        init_fn, kernel_fn = get_kalman_kernel(ys, m0, P0, F, Q, b, args.parallel, (args.NU, PREC), 2)
+        delta_init = args.delta_init
+    elif args.style == "csmc":
+        init_fn, kernel_fn = get_csmc_kernel(ys, SIGMA_X, args.NU, PREC, args.N, args.backward, args.parallel,
+                                             args.gradient)
+        delta_init = args.delta_init * jnp.ones((args.T,))
+    elif args.style == "csmc-guided":
+        init_fn, kernel_fn = get_guided_csmc_kernel(ys, SIGMA_X, args.NU, PREC, args.N, args.backward, args.gradient)
+        delta_init = args.delta_init * jnp.ones((args.T,))
     else:
         raise NotImplementedError
 
-    init_state = init_fn(xs_init)
+    init_xs = init_x_fn(init_key, ys, SIGMA_X, args.NU, PREC, 100 * args.N)
+
+    init_state = init_fn(init_xs)
 
     # BURNIN
     _, _, burnin_state, burnin_delta, burnin_avg_acceptance, _ = loop(burnin_key,
@@ -152,16 +158,15 @@ def _one_experiment(xs_init, ys, burnin_key, sample_key, verbose=args.verbose):
 
     _, stats, _, _, _, pct_accepted = loop(sample_key, burnin_delta, burnin_state, kernel_fn, None, args.n_samples,
                                            verbose)
-    return stats, ys, xs_init, pct_accepted, burnin_delta
+    return stats, init_xs, ys, pct_accepted, burnin_delta
 
 
 def one_experiment(random_state, exp_key, verbose=args.verbose):
     # DATA
     data_key, init_key, burnin_key, sample_key = jax.random.split(exp_key, 4)
     true_xs, ys = get_data(random_state, SIGMA_X, RY, TAU, args.NU, args.D, args.T)
-    xs_init, _ = get_data(random_state, SIGMA_X, RY, TAU, args.NU, args.D, args.T)
-    stats, ys, xs_init, pct_accepted, burnin_delta = _one_experiment(xs_init, ys, burnin_key, sample_key, verbose)
-    return stats, true_xs, ys, xs_init, pct_accepted, burnin_delta
+    stats, init_xs, ys, pct_accepted, burnin_delta = _one_experiment(ys, init_key, burnin_key, sample_key, verbose)
+    return stats, true_xs, init_xs, pct_accepted, burnin_delta
 
 
 def full_experiment():
@@ -176,8 +181,8 @@ def full_experiment():
     for i in tqdm.trange(args.n_experiments,
                          desc=f"Style: {args.style}, T: {args.T}, N: {args.N}, D: {args.D}, gpu: {args.gpu}"):
         start = time.time()
-        (esjd, traj, squared_exp), true_xs, _, xs_init, pct_accepted, burnin_delta = one_experiment(np_random_state,
-                                                                                                    keys[i])
+        (esjd, traj, squared_exp), true_xs, true_init, pct_accepted, burnin_delta = one_experiment(np_random_state,
+                                                                                                   keys[i])
 
         ejsd_per_key[i, :] = esjd.block_until_ready()
         acceptance_rate_per_key[i, :] = pct_accepted
@@ -194,17 +199,26 @@ def full_experiment():
         # except:  # noqa
         #     continue
         from matplotlib import pyplot as plt
-        plt.plot(np.arange(args.T), traj[..., -1, 0], color="tab:orange")
-        std = np.sqrt(squared_exp[..., -1, 0] - traj[..., -1, 0] ** 2)
-        plt.fill_between(np.arange(args.T), traj[..., -1, 0] + 2 * std, traj[..., -1, 0] - 2 * std,
-                         color="tab:orange", alpha=0.2)
-        plt.plot(np.arange(args.T), true_xs[:, -1], color="tab:blue")
-        plt.plot(np.arange(args.T), xs_init[:, -1], color="k", linestyle="--")
+        fig, ax = plt.subplots(figsize=(25, 10))
+
+        ax.plot(np.arange(args.T), traj[..., -1], color="tab:orange")
+        std = np.sqrt(squared_exp[..., -1] - traj[..., -1] ** 2)
+        ax.fill_between(np.arange(args.T), traj[..., -1] + 2 * std, traj[..., -1] - 2 * std,
+                        color="tab:orange", alpha=0.2)
+        ax.plot(np.arange(args.T), true_xs[:, -1], color="tab:blue")
+        ax.plot(np.arange(args.T), true_init[:, -1], color="gray", alpha=0.5, linestyle="--")
         plt.show()
 
         fig, ax = plt.subplots(figsize=(10, 5))
-        ax.plot(np.arange(args.T), esjd, color="tab:blue")
-        # ax.twinx().plot(np.arange(args.T), pct_accepted, color="tab:orange")
+        fig.suptitle(f"Style: {args.style}, grad: {args.gradient}")
+        ax.semilogy(np.arange(args.T), esjd, color="tab:blue", label="EJSD")
+        twinx = ax.twinx()
+        if "kalman" in args.style:
+            twinx.plot(np.arange(args.T), pct_accepted * np.ones((args.T,)), color="tab:orange", label="acceptance rate")
+        else:
+            twinx.plot(np.arange(args.T), pct_accepted, color="tab:orange", label="acceptance rate")
+        twinx.set_ylim(0, 1)
+        ax.legend()
         plt.show()
     return ejsd_per_key, acceptance_rate_per_key, delta_per_key, time_per_key
 

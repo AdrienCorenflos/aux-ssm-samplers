@@ -1,14 +1,16 @@
 from functools import partial
 
 import jax
+import jax.numpy as jnp
 import numba as nb
 import numpy as np
-import jax.numpy as jnp
 from jax.experimental.sparse.bcoo import BCOO
-from t_distribution import sample as t_sample, logpdf as t_log_pdf
 from scipy.sparse import coo_matrix
 from scipy.sparse.linalg import inv
 from scipy.stats import multivariate_t as scipy_t
+
+from t_distribution import logpdf as t_log_pdf
+
 
 def make_precision(tau, r_y, d):
     """
@@ -47,6 +49,7 @@ def make_precision(tau, r_y, d):
     prec = BCOO((data, indices), shape=(d ** 2, d ** 2))  # type: ignore
     return prec
 
+
 @nb.njit
 def _make_precision_np_coo(tau: float, r_y: float, d: int):
     data = []
@@ -64,6 +67,7 @@ def _make_precision_np_coo(tau: float, r_y: float, d: int):
     data = np.array(data)
     indices = np.array(indices, dtype=np.int_)
     return data, indices
+
 
 @nb.njit
 def _make_precision_np_csr(tau: float, r_y: float, d: int):
@@ -110,18 +114,42 @@ def get_dynamics(sigma_x, d):
 
 @jax.jit
 def log_potential(xs, ys, nu, prec):
-    vals = jax.vmap(_log_potential_one, in_axes=[0, 0, None, None])(xs, ys, nu, prec)
+    vals = jax.vmap(log_potential_one, in_axes=[0, 0, None, None])(xs, ys, nu, prec)
     return jnp.sum(vals)
 
 
 @jax.jit
-def grad_log_potential(xs, ys):
-    return jax.grad(log_potential)(xs, ys)
-
-
-
-@jax.jit
-def _log_potential_one(x, y, nu, prec):
+def log_potential_one(x, y, nu, prec):
     val = t_log_pdf(y, x, nu, prec)
     return jnp.nan_to_num(val)
 
+
+def init_x_fn(key, ys, sigma_x, nu, prec, N):
+    # run a simple bootstrap filter + backward sampling.
+    T, d = ys.shape
+    x0 = sigma_x * jax.random.normal(key, shape=(N, d))
+    fwd_key, bwd_key = jax.random.split(key)
+
+    def fwd_body(x, inps):
+        y, op_key = inps
+        log_w = log_potential_one(x, y, nu, prec)
+        log_w = log_w - jax.scipy.special.logsumexp(log_w)
+        w = jnp.exp(log_w)
+        next_x = jax.random.choice(key, x, shape=(N,), p=w)
+        next_x = next_x + sigma_x * jax.random.normal(key, shape=(N, d))
+        return next_x, (log_w, x)
+
+    _, (log_ws, xs) = jax.lax.scan(fwd_body, x0, (ys, jax.random.split(key, T)))
+
+    def bwd_body(x, inps):
+        log_w, x_prev, op_key = inps
+        log_w += jnp.sum(jax.scipy.stats.norm.logpdf(x, x_prev, sigma_x), -1)
+        w = jnp.exp(log_w - jax.scipy.special.logsumexp(log_w))
+        x = jax.random.choice(op_key, x_prev, shape=(), p=w)
+        return x, x
+
+    bwd_key_init, bwd_key_loop = jax.random.split(bwd_key)
+    x_T = jax.random.choice(bwd_key_init, xs[-1], shape=(), p=jnp.exp(log_ws[-1]))
+    _, xs = jax.lax.scan(bwd_body, x_T, (log_ws[:-1], xs[:-1], jax.random.split(bwd_key_loop, T - 1)), reverse=True)
+    xs = jnp.concatenate([xs, x_T[None, :]], axis=0)
+    return xs

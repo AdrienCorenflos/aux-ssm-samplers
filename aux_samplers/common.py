@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 
 
-def delta_adaptation(delta, target_rate, acceptance_rate, adaptation_rate, min_delta=1e-20):
+def delta_adaptation(delta, target_rate, acceptance_rate, adaptation_rate, min_delta=1e-20, max_delta=1e3):
     """
     A simple adaptation rule for the delta parameter of the auxiliary Kalman sampler.
 
@@ -17,6 +17,8 @@ def delta_adaptation(delta, target_rate, acceptance_rate, adaptation_rate, min_d
         Adaptation rate.
     min_delta: float
         Minimum value of delta.
+    max_delta: float
+        Maximum value of delta.
 
     Returns
     -------
@@ -27,4 +29,4 @@ def delta_adaptation(delta, target_rate, acceptance_rate, adaptation_rate, min_d
     rate = jnp.exp(adaptation_rate * (acceptance_rate - target_rate))
     # rate = 1 - (target_rate - acceptance_rate) * adaptation_rate
     out = delta * rate
-    return jnp.maximum(out, min_delta)
+    return jnp.clip(out, min_delta, max_delta)

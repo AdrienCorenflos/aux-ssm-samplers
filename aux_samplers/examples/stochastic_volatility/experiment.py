@@ -41,7 +41,7 @@ parser.add_argument("--burnin", dest="burnin", type=int, default=2_500)
 parser.add_argument("--target-alpha", dest="target_alpha", type=float, default=0.5)
 parser.add_argument("--lr", dest="lr", type=float, default=1.)
 parser.add_argument("--beta", dest="beta", type=int, default=0.1)
-parser.add_argument("--delta-init", dest="delta_init", type=float, default=1e-20)
+parser.add_argument("--delta-init", dest="delta_init", type=float, default=1e-10)
 parser.add_argument("--seed", dest="seed", type=int, default=1234)
 parser.add_argument("--style", dest="style", type=str, default="kalman-2")
 parser.add_argument("--gradient", action='store_true')
@@ -66,12 +66,12 @@ else:
 NU, PHI, TAU, RHO = 0., .9, 2., .25
 m0, P0, F, Q, b = get_dynamics(NU, PHI, TAU, RHO, args.D)
 
-if args.style != "kalman":
-    args.target_alpha = 1 - (1 + args.N) ** (-1 / 3)
-elif args.style == "csmc" and args.parallel:
-    # More conservative target alpha for parallel cSMC. This is perhaps an artifact of the warmup, but it's not clear.
-    args.target_alpha = 0.33
-
+if "kalman" not in args.style:
+    if not args.parallel:
+        args.target_alpha = 1 - (1 + args.N) ** (-1 / 3)
+    else:
+        # more conservative target alpha for parallel
+        args.target_alpha = 1 - (1 + args.N) ** (-1 / 6)
 
 # STATS FN
 def stats_fn(x_1, x_2):
@@ -84,10 +84,11 @@ def loop(key, init_delta, init_state, kernel_fn, delta_fn, n_iter, verbose=False
     from datetime import datetime
     keys = jax.random.split(key, n_iter)
 
-    print_func = lambda z, *_: print(f"\riteration: {z[0]}, current time: {datetime.now().strftime('%H:%M:%S')}, "
-                                     f"min_delta: {z[1]:.2e}, max_delta: {z[2]:.2e}, "
+    print_func = lambda z, *_: print(f"\riteration: {z[0]}, time: {datetime.now().strftime('%H:%M:%S')}, "
+                                     f"min_δ: {z[1]:.2e}, max_δ: {z[2]:.2e}, "
                                      f"min_window_accept: {z[3]:.1%},  max_window_accept: {z[4]:.1%}, "
-                                     f"min_accept: {z[5]:.1%}, max_accept: {z[6]:.1%},", end="")
+                                     f"min_accept: {z[5]:.1%}, max_accept: {z[6]:.1%}, "
+                                     f"min_esjd: {z[7]:.2e}, max_esjd: {z[8]:.2e}", end="")
 
     def body_fn(carry, key_inp):
         from jax.experimental.host_callback import id_tap
@@ -97,6 +98,7 @@ def loop(key, init_delta, init_state, kernel_fn, delta_fn, n_iter, verbose=False
                                 jnp.min(delta), jnp.max(delta),
                                 jnp.min(window_avg_acceptance), jnp.max(window_avg_acceptance),
                                 jnp.min(avg_acceptance), jnp.max(avg_acceptance),
+                                jnp.min(stats[0]), jnp.max(stats[0]),
                                 ), result=None)
 
         next_state = kernel_fn(key_inp, state, delta)
