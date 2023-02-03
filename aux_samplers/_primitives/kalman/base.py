@@ -116,7 +116,7 @@ def prior_logpdf(xs: Array, lgssm: LGSSM) -> Numeric:
     m0, P0, Fs, Qs, bs, *_ = lgssm
 
     chol_P0 = jnp.linalg.cholesky(P0)
-    out = jnp.nan_to_num(logpdf(xs[0], m0, chol_P0))
+    out = jnp.nansum(logpdf(xs[0], m0, chol_P0))
 
     chol_Qs = jnp.linalg.cholesky(Qs)
     pred_xs = jnp.einsum("...ij,...j->...i", Fs, xs[:-1]) + bs

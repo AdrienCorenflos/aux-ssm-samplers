@@ -3,7 +3,7 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 from chex import Array, ArrayTree, PRNGKey
-from jax.experimental.sparse import BCOO
+from jax.experimental.sparse import BCOO, bcoo_dot_general, COO, coo_matmat
 from jax.scipy.linalg import solve_triangular, cholesky
 
 
@@ -55,7 +55,7 @@ def sample(key: PRNGKey, mu: Array, nu: float, prec: ArrayTree):
     return mu + jnp.sqrt(1 / u) * y
 
 
-@jax.jit
+@partial(jnp.vectorize, signature="(d),(d),()->()", excluded=(3,))
 def logpdf(x: Array, mu: Array, nu: float, prec: BCOO):
     """
     Computes the (unnormalised) log-likelihood of a multivariate t-distribution at x.
@@ -80,15 +80,19 @@ def logpdf(x: Array, mu: Array, nu: float, prec: BCOO):
     --------
     >>> import numpy as np
     >>> from scipy.stats import multivariate_t
-    >>> xs = np.random.randn(100, 2)
+    >>> xs = np.random.randn(100, 50, 2)
     >>> mu = jnp.array([2, 3])
     >>> prec = np.array([[1, 0.2],
     ...                  [0.2, 1]])
-    >>> coo_prec = jax.experimental.sparse.COO.fromdense(prec)
+    >>> coo_prec = jax.experimental.sparse.BCOO.fromdense(prec)
     >>> actual = logpdf(xs, mu, 3, coo_prec)
+    >>> actual.shape
+    (100, 50)
     >>> expected = multivariate_t.logpdf(xs, loc=mu, df=3, shape=np.linalg.inv(prec))
     >>> ratio = np.exp(actual - expected)
     >>> np.allclose(ratio, ratio.mean(), atol=1e-5)
+    True
+    >>> np.allclose(0., ratio.std(), atol=1e-5)
     True
     """
     x, mu = jnp.broadcast_arrays(x, mu)

@@ -84,8 +84,7 @@ def _make_precision_np_csr(tau: float, r_y: float, d: int):
     return data, indices
 
 
-def get_data(seed, sigma_x, r_y, tau, nu, d, T):
-    state = np.random.RandomState(seed)
+def get_data(state, sigma_x, r_y, tau, nu, d, T):
     data, indices = _make_precision_np_coo(tau, r_y, d)
     coo_prec = coo_matrix((data, (indices[:, 0], indices[:, 1])), shape=(d ** 2, d ** 2))
     coo_cov = inv(coo_prec.tocsc())
@@ -96,9 +95,33 @@ def get_data(seed, sigma_x, r_y, tau, nu, d, T):
     ys = xs + scipy_t.rvs(shape=cov, df=nu, size=(T,), random_state=state)
     return xs, ys
 
-if __name__  == "__main__":
-    jax.config.update("jax_platform_name", "cpu")
-    XS, YS = get_data(0, 1.0, 1.0, -0.25, 3.0, 16, 1_000)
-    print(XS.shape, YS.shape)
 
+@partial(jax.jit, static_argnums=(1,))
+def get_dynamics(sigma_x, d):
+    # Batched version of the dynamics
+    F = jnp.ones((d ** 2, 1, 1))
+    Q = sigma_x ** 2 * jnp.ones((d ** 2, 1, 1))
+    b = jnp.zeros((d ** 2, 1))
+
+    m0 = b
+    P0 = Q
+    return m0, P0, F, Q, b
+
+
+@jax.jit
+def log_potential(xs, ys, nu, prec):
+    vals = jax.vmap(_log_potential_one, in_axes=[0, 0, None, None])(xs, ys, nu, prec)
+    return jnp.sum(vals)
+
+
+@jax.jit
+def grad_log_potential(xs, ys):
+    return jax.grad(log_potential)(xs, ys)
+
+
+
+@jax.jit
+def _log_potential_one(x, y, nu, prec):
+    val = t_log_pdf(y, x, nu, prec)
+    return jnp.nan_to_num(val)
 

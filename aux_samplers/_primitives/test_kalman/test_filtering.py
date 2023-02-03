@@ -98,4 +98,4 @@ def test_batched_model(seed, T, dx, dy, parallel):
     npt.assert_allclose(ell, expected_ell)
     npt.assert_allclose(np.reshape(bms, (T, B * dx)), expected_ms)
     npt.assert_allclose(batched_block_diag(bPs), expected_Ps)
-    npt.assert_allclose(np.sum(bell), expected_ell)
+    npt.assert_allclose(bell, expected_ell)

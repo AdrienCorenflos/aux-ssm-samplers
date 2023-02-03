@@ -34,9 +34,13 @@ def filtering(ys: Array, lgssm: LGSSM, parallel: bool) -> Tuple[Array, Array, Nu
     m0, P0, Fs, Qs, bs, Hs, Rs, cs = lgssm
 
     if parallel:
-        return _parallel_filtering(m0, P0, ys, Fs, Qs, bs, Hs, Rs, cs)  # noqa: bad static type checking
+        ms, Ps, ell = _parallel_filtering(m0, P0, ys, Fs, Qs, bs, Hs, Rs, cs)  # noqa: bad static type checking
     else:
-        return _sequential_filtering(m0, P0, ys, Fs, Qs, bs, Hs, Rs, cs)
+        ms, Ps, ell = _sequential_filtering(m0, P0, ys, Fs, Qs, bs, Hs, Rs, cs)
+    if jnp.ndim(ell) == 1:
+        # batched case
+        ell = jnp.sum(ell)
+    return ms, Ps, ell
 
 
 def _parallel_filtering(m0, P0, ys, Fs, Qs, bs, Hs, Rs, cs):
