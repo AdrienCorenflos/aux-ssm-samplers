@@ -172,7 +172,7 @@ def get_coupled_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, 
         return m0, g0, mt, gt
 
     if not parallel:
-        return get_base_kernel(factory, N, backward, Pt)
+        return get_base_kernel(factory, N, backward, Pt, coupled=True)
     else:
         raise NotImplementedError("Parallel version not implemented yet.")
 
@@ -187,17 +187,31 @@ def _get_classical_coupled_kernel(M0: Distribution, G0: UnivariatePotential, Mt:
         else:
             grad_pi_1, grad_pi_2 = 0. * u_1, 0. * u_2
 
-        cm0 = AuxiliaryM0(u=u[0], sqrt_half_delta=scale[0], grad=grad_pi[0])
-        mt = AuxiliaryMtDynamics(params=(u[1:], scale[1:], grad_pi[1:]))
+        cm0 = CoupledAuxiliaryM0(u_1=u_1[0], u_2=u_2[0], sqrt_half_delta=scale[0], grad_1=grad_pi_1[0],
+                                 grad_2=grad_pi_2[0])
+        cmt = CoupledAuxiliaryMtDynamics(params=(u_1[1:], u_2[1:], scale[1:], grad_pi_1[1:], grad_pi_2[1:]))
+
         if gradient:
-            g0 = GradientAuxiliaryG0(M0=M0, G0=G0, u=u[0], sqrt_half_delta=scale[0], grad=grad_pi[0])
-            gt = GradientAuxiliaryGt(Mt=Mt, Gt=Gt, params=(u[1:], scale[1:], grad_pi[1:]))
+            g0_1 = GradientAuxiliaryG0(M0=M0, G0=G0, u=u_1[0], sqrt_half_delta=scale[0], grad=grad_pi_1[0])
+            g0_2 = GradientAuxiliaryG0(M0=M0, G0=G0, u=u_2[0], sqrt_half_delta=scale[0], grad=grad_pi_2[0])
+            gt_1 = GradientAuxiliaryGt(Mt=Mt, Gt=Gt, params=(u_1[1:], scale[1:], grad_pi_1[1:]))
+            gt_2 = GradientAuxiliaryGt(Mt=Mt, Gt=Gt, params=(u_2[1:], scale[1:], grad_pi_2[1:]))
         else:
-            g0 = AuxiliaryG0(M0=M0, G0=G0)
-            gt = AuxiliaryGt(Mt=Mt, Gt=Gt)
-        return m0, g0, mt, gt
+
+            g0_1 = g0_2 = AuxiliaryG0(M0=M0, G0=G0)
+
+            gt_1 = gt_2 = AuxiliaryGt(Mt=Mt, Gt=Gt)
+
+        return cm0, g0_1, g0_2, cmt, gt_1, gt_2
 
     return get_base_kernel(coupled_factory, N, backward, Pt, coupled=True)
+
+
+def _get_parallel_coupled_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int,
+                                 Pt: Optional[Dynamics], gradient):
+    # This function uses the classes defined below
+    def coupled_factory(u_1, u_2, scale):
+        pass
 
 
 def _log_pdf(u, M0, G0, Mt, Gt):
@@ -241,7 +255,7 @@ class AuxiliaryM0(Distribution):
 
 
 @chex.dataclass
-class coupledAuxiliaryM0(CoupledDistribution):
+class CoupledAuxiliaryM0(CoupledDistribution):
     u_1: Array
     u_2: Array
     sqrt_half_delta: float
@@ -356,7 +370,6 @@ class CoupledAuxiliaryMtDistribution(CoupledDistribution):
     def sample(self, key, N):
         u_t_1, sqrt_half_delta, grad_t_1 = self.params_1
         u_t_2, _, grad_t_2 = self.params_2
-        d = u_t_1.shape[-1]
 
         half_delta = sqrt_half_delta ** 2
         if grad_t_1 is None:
@@ -368,7 +381,8 @@ class CoupledAuxiliaryMtDistribution(CoupledDistribution):
 
         return reflection_maximal(key, N, mean_1, mean_2, self.sqrt_half_delta)
 
-    def _logpdf(self, x, params):
+    @staticmethod
+    def _logpdf(x, params):
         u_t, sqrt_half_delta, grad_t = params
         half_delta = sqrt_half_delta ** 2
         if grad_t is None:
@@ -396,9 +410,8 @@ class AuxiliaryMtDynamics(Dynamics):
 
 @chex.dataclass
 class CoupledAuxiliaryMtDynamics(CoupledDynamics):
-    def sample(self, key, x_t_1, x_t_2, params_1, params_2):
-        u_t_1, sqrt_half_delta, grad_t_1 = params_1
-        u_t_2, _, grad_t_2 = params_2
+    def sample(self, key, x_t_1, x_t_2, params):
+        u_t_1, u_t_2, sqrt_half_delta, grad_t_1, grad_t_2 = params
         half_delta = sqrt_half_delta ** 2
         mean_1 = u_t_1[None, :] + half_delta * grad_t_1[None, :]
         mean_2 = u_t_2[None, :] + half_delta * grad_t_2[None, :]

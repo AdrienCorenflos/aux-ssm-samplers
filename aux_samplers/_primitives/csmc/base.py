@@ -95,7 +95,7 @@ class CoupledDynamics(abc.ABC):
     """
     params: Optional[ArrayTree] = None
 
-    def sample(self, key, x_t_1, x_t_2, params_1, params_2):
+    def sample(self, key, x_t_1, x_t_2, params):
         raise NotImplementedError
 
     def logpdf_1(self, x_t_p_1, x_t, params):
@@ -136,14 +136,17 @@ class CRNDynamics(CoupledDynamics):
     def __post_init__(self):
         self.params = (self.dynamics_1.params, self.dynamics_2.params)
 
-    def sample(self, key, x1_t, x2_t, params_1, params_2):
+    def sample(self, key, x1_t, x2_t, params):
+        params_1, params_2 = params
         x1_t_p_1 = self.dynamics_1.sample(key, x1_t, params_1)
         x2_t_p_1 = self.dynamics_2.sample(key, x2_t, params_2)
         coupled = jnp.linalg.norm(x1_t_p_1 - x2_t_p_1, axis=-1) < self._EPS
         return x1_t_p_1, x2_t_p_1, coupled
 
     def logpdf_1(self, x_t_p_1, x_t, params):
-        return self.dynamics_1.logpdf(x_t_p_1, x_t, params)
+        params_1, _ = params
+        return self.dynamics_1.logpdf(x_t_p_1, x_t, params_1)
 
     def logpdf_2(self, x_t_p_1, x_t, params):
-        return self.dynamics_2.logpdf(x_t_p_1, x_t, params)
+        _, params_2 = params
+        return self.dynamics_2.logpdf(x_t_p_1, x_t, params_2)

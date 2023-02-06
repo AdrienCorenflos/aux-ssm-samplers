@@ -136,7 +136,7 @@ def init_x_fn(key, ys, sigma_x, nu, prec, N):
         log_w = log_w - jax.scipy.special.logsumexp(log_w)
         w = jnp.exp(log_w)
         next_x = jax.random.choice(key, x, shape=(N,), p=w)
-        next_x = next_x + sigma_x * jax.random.normal(key, shape=(N, d))
+        next_x += sigma_x * jax.random.normal(key, shape=(N, d))
         return next_x, (log_w, x)
 
     _, (log_ws, xs) = jax.lax.scan(fwd_body, x0, (ys, jax.random.split(key, T)))

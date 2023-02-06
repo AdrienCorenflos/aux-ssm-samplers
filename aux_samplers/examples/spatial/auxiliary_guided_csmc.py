@@ -102,10 +102,16 @@ class AuxiliaryGt(Potential):
         u, scale, y = params
         mu_t, sqrt_Lambda_t = get_mu_chol_Lambda_t(x_t, sigma_x, u, scale, y, self.grad, nu, prec)
 
-        out = log_potential_one(x_t_p_1, y, nu, prec)  # gt
-        out += jnp.sum(norm.logpdf(x_t_p_1, x_t, sigma_x), -1)
-        out += jnp.sum(norm.logpdf(x_t_p_1, u, scale), -1)  # N(x|u, 0.5 * delta)
-        out -= jnp.sum(norm.logpdf(x_t_p_1, mu_t, sqrt_Lambda_t[:, None]), -1)  # N(x|m, P - K @ P)
+        gt = log_potential_one(x_t_p_1, y, nu, prec)  # gt
+        # jax.debug.print("gt: {}", gt)
+        mt = jnp.sum(norm.logpdf(x_t_p_1, x_t, sigma_x), -1)  # mt
+        # jax.debug.print("mt: {}", mt)
+        ut_part = jnp.sum(norm.logpdf(x_t_p_1, u, scale), -1)  # N(x|u, 0.5 * delta)
+        # jax.debug.print("ut: {}", ut_part)
+        prop_part = jnp.sum(norm.logpdf(x_t_p_1, mu_t, sqrt_Lambda_t[:, None]), -1)  # N(x|m, P - K @ P)
+        # jax.debug.print("prop_part: {}", ut_part)
+
+        out = gt + mt + ut_part - prop_part
         return out
 
 

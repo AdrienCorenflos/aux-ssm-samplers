@@ -104,7 +104,7 @@ def _ccsmc(key, x_star_1, x_star_2, coupling_flag, cM0, G0_1, G0_2, cMt, Gt_1, G
 
     def body(carry, inp):
         w_1_t_m_1, x_1_t_m_1, w_2_t_m_1, x_2_t_m_1 = carry
-        Mt_params, Gt_params, x_1_star_t, x_2_star_t, key_t, flag = inp
+        cMt_params, Gt_params, x_1_star_t, x_2_star_t, key_t, flag = inp
         resampling_key, sampling_key = jax.random.split(key_t)
         # Conditional resampling
         A_1_t, A_2_t, coupled_index = coupled_multinomial(resampling_key, w_1_t_m_1, w_2_t_m_1)
@@ -113,7 +113,7 @@ def _ccsmc(key, x_star_1, x_star_2, coupling_flag, cM0, G0_1, G0_2, cMt, Gt_1, G
         x_2_t_m_1 = jnp.take(x_2_t_m_1, A_2_t, axis=0)
 
         # Sample new particles
-        x_1_t, x_2_t, coupled_t = cMt.sample(sampling_key, x_1_t_m_1, x_2_t_m_1, Mt_params[0], Mt_params[1])
+        x_1_t, x_2_t, coupled_t = cMt.sample(sampling_key, x_1_t_m_1, x_2_t_m_1, cMt_params)
 
         x_1_t = x_1_t.at[0].set(x_1_star_t)
         x_2_t = x_2_t.at[0].set(x_2_star_t)

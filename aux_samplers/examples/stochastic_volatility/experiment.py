@@ -27,7 +27,7 @@ parser.add_argument('--no-debug-nans', dest='debug_nans', action='store_false')
 parser.set_defaults(debug_nans=False)
 parser.add_argument('--gpu', action='store_true')
 parser.add_argument('--no-gpu', dest='gpu', action='store_false')
-parser.set_defaults(gpu=False)
+parser.set_defaults(gpu=True)
 parser.add_argument('--verbose', action='store_true')
 parser.add_argument('--no-verbose', dest='verbose', action='store_false')
 parser.set_defaults(verbose=True)
@@ -35,7 +35,7 @@ parser.set_defaults(verbose=True)
 # Experiment arguments
 parser.add_argument("--n-experiments", dest="n_experiments", type=int, default=10)
 parser.add_argument("--T", dest="T", type=int, default=50)
-parser.add_argument("--D", dest="D", type=int, default=5)
+parser.add_argument("--D", dest="D", type=int, default=30)
 parser.add_argument("--n-samples", dest="n_samples", type=int, default=10_000)
 parser.add_argument("--burnin", dest="burnin", type=int, default=2_500)
 parser.add_argument("--target-alpha", dest="target_alpha", type=float, default=0.5)
@@ -55,7 +55,7 @@ parser.add_argument("--N", dest="N", type=int, default=25)
 args = parser.parse_args()
 
 # BACKEND CONFIG
-jax.config.update("jax_enable_x64", True)
+jax.config.update("jax_enable_x64", False)
 if not args.gpu:
     jax.config.update("jax_platform_name", "cpu")
 else:

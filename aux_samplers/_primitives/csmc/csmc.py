@@ -76,9 +76,10 @@ def _csmc(key, x_star, M0, G0, Mt, Gt, N):
     # Compute initial weights and normalize
     log_w0 = G0(x0)
     w0 = normalize(log_w0)
+    # jax.debug.print("\n\n")
 
     def body(carry, inp):
-        w_t_m_1, x_t_m_1 = carry
+        t_m_1, w_t_m_1, x_t_m_1 = carry
         Mt_params, Gt_params, x_star_t, key_t = inp
         resampling_key, sampling_key = jax.random.split(key_t)
         # Conditional resampling
@@ -91,14 +92,16 @@ def _csmc(key, x_star, M0, G0, Mt, Gt, N):
 
         # Compute weights
         log_w_t = Gt(x_t, x_t_m_1, Gt_params)
+        # jax.debug.print("t, log_w_t: {}, {}", t_m_1, log_w_t)
+        # jax.debug.print("\n")
         w_t = normalize(log_w_t)
         # Return next step
-        next_carry = (w_t, x_t)
+        next_carry = (t_m_1 + 1, w_t, x_t)
         save = (x_t, log_w_t, A_t)
 
         return next_carry, save
 
-    (w_T, _), (xs, log_ws, As) = jax.lax.scan(body, (w0, x0), (Mt.params, Gt.params, x_star[1:], keys[1:]))
+    (_, w_T, _), (xs, log_ws, As) = jax.lax.scan(body, (0, w0, x0), (Mt.params, Gt.params, x_star[1:], keys[1:]))
 
     log_ws = jnp.insert(log_ws, 0, log_w0, axis=0)
     xs = jnp.insert(xs, 0, x0, axis=0)

@@ -18,7 +18,7 @@ parser = argparse.ArgumentParser("Run a Spatio-temporal experiment")
 # General arguments
 parser.add_argument('--parallel', action='store_true')
 parser.add_argument('--no-parallel', dest='parallel', action='store_false')
-parser.set_defaults(parallel=True)
+parser.set_defaults(parallel=False)
 parser.add_argument('--debug', action='store_true')
 parser.add_argument('--no-debug', dest='debug', action='store_false')
 parser.set_defaults(debug=False)
@@ -27,37 +27,37 @@ parser.add_argument('--no-debug-nans', dest='debug_nans', action='store_false')
 parser.set_defaults(debug_nans=False)
 parser.add_argument('--gpu', action='store_true')
 parser.add_argument('--no-gpu', dest='gpu', action='store_false')
-parser.set_defaults(gpu=True)
+parser.set_defaults(gpu=False)
 parser.add_argument('--verbose', action='store_true')
 parser.add_argument('--no-verbose', dest='verbose', action='store_false')
 parser.set_defaults(verbose=True)
 
 # Experiment arguments
 parser.add_argument("--n-experiments", dest="n_experiments", type=int, default=10)
-parser.add_argument("--T", dest="T", type=int, default=2 ** 8)
-parser.add_argument("--D", dest="D", type=int, default=16)
-parser.add_argument("--NU", dest="NU", type=int, default=1)
-parser.add_argument("--n-samples", dest="n_samples", type=int, default=25_000)
-parser.add_argument("--burnin", dest="burnin", type=int, default=10_000)
+parser.add_argument("--T", dest="T", type=int, default=2 ** 9)
+parser.add_argument("--D", dest="D", type=int, default=8)
+parser.add_argument("--NU", dest="NU", type=int, default=10)
+parser.add_argument("--n-samples", dest="n_samples", type=int, default=10_000)
+parser.add_argument("--burnin", dest="burnin", type=int, default=2_500)
 parser.add_argument("--target-alpha", dest="target_alpha", type=float,
                     default=0.5)
-parser.add_argument("--lr", dest="lr", type=float, default=0.1)
+parser.add_argument("--lr", dest="lr", type=float, default=0.5)
 parser.add_argument("--beta", dest="beta", type=float, default=0.05)
 parser.add_argument("--delta-init", dest="delta_init", type=float, default=1e-3)
 parser.add_argument("--seed", dest="seed", type=int, default=1234)
-parser.add_argument("--style", dest="style", type=str, default="kalman-2")
+parser.add_argument("--style", dest="style", type=str, default="csmc-guided")
 parser.add_argument("--gradient", action='store_true')
 parser.add_argument('--no-gradient', dest='gradient', action='store_false')
-parser.set_defaults(gradient=True)
+parser.set_defaults(gradient=False)
 parser.add_argument("--backward", action='store_true')
 parser.add_argument('--no-backward', dest='backward', action='store_false')
 parser.set_defaults(backward=True)
-parser.add_argument("--N", dest="N", type=int, default=25)
+parser.add_argument("--N", dest="N", type=int, default=10)
 
 args = parser.parse_args()
 
 # BACKEND CONFIG
-jax.config.update("jax_enable_x64", True)
+jax.config.update("jax_enable_x64", False)
 if not args.gpu:
     jax.config.update("jax_platform_name", "cpu")
 else:
@@ -143,7 +143,7 @@ def _one_experiment(ys, init_key, burnin_key, sample_key, verbose=args.verbose):
     else:
         raise NotImplementedError
 
-    init_xs = init_x_fn(init_key, ys, SIGMA_X, args.NU, PREC, 100 * args.N)
+    init_xs = init_x_fn(init_key, ys, SIGMA_X, args.NU, PREC, 1_000)
 
     init_state = init_fn(init_xs)
 
@@ -179,7 +179,7 @@ def full_experiment():
     delta_per_key = np.ones((args.n_experiments, args.T)) * np.nan
     time_per_key = np.ones((args.n_experiments,)) * np.nan
     for i in tqdm.trange(args.n_experiments,
-                         desc=f"Style: {args.style}, T: {args.T}, N: {args.N}, D: {args.D}, gpu: {args.gpu}"):
+                         desc=f"Style: {args.style}, T: {args.T}, N: {args.N}, D: {args.D}, gpu: {args.gpu}, grad: {args.gradient}"):
         start = time.time()
         (esjd, traj, squared_exp), true_xs, true_init, pct_accepted, burnin_delta = one_experiment(np_random_state,
                                                                                                    keys[i])
@@ -210,7 +210,7 @@ def full_experiment():
         plt.show()
 
         fig, ax = plt.subplots(figsize=(10, 5))
-        fig.suptitle(f"Style: {args.style}, grad: {args.gradient}")
+        fig.suptitle(f"Style: {args.style}, grad: {args.gradient}, parallel: {args.parallel}")
         ax.semilogy(np.arange(args.T), esjd, color="tab:blue", label="EJSD")
         twinx = ax.twinx()
         if "kalman" in args.style:
