@@ -50,7 +50,7 @@ def get_coupled_kernel(cMt: CoupledDistribution, G0_1: UnivariatePotential, G0_2
     N: int
         Total number of particles to use in the cSMC sampler.
     Qt_1, Qt_2: Distribution, optional
-        Optional. If provided, this will be used to compute the importance weights.
+        If provided, this will be used to compute the importance weights.
 
     Returns:
     --------
@@ -132,6 +132,7 @@ def _ccsmc(key, x_star_1, x_star_2, coupled_flags, cMt, G0_1, G0_2, Gt_1, Gt_2, 
     inputs_2 = states_2, resampling_keys, params_2
     inputs = inputs_1, inputs_2
     outputs = dc_map(inputs, jax.vmap(ccsmc_operator), jax.vmap(last_ccsmc_operator))
+
     state_out_1, state_out_2 = outputs
     xs_1, _, ancestors_1 = state_out_1[0]
     xs_2, _, ancestors_2 = state_out_2[0]

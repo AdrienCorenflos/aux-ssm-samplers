@@ -11,10 +11,11 @@ from jax import numpy as jnp
 from jax.scipy.stats import norm
 
 from .generic import get_kernel as get_base_kernel
+from .._primitives.base import CoupledSamplerState
 from .._primitives.csmc.base import Distribution, UnivariatePotential, Dynamics, Potential, CSMCState, CoupledDynamics, \
     CoupledDistribution
-from .._primitives.csmc.pit.csmc import get_kernel as get_pit_kernel
-from .._primitives.math.mvn.couplings import reflection_maximal, reflection
+from .._primitives.csmc.pit import get_kernel as get_pit_kernel, get_coupled_kernel as get_coupled_pit_kernel
+from .._primitives.math.mvn.couplings import reflection_maximal, reflection, lindvall_roger
 
 
 def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int,
@@ -155,26 +156,10 @@ def get_coupled_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, 
         Function to initialize the state of the sampler given a trajectory.
     """
 
-    # This function uses the classes defined below
-    def factory(u, scale):
-        if gradient:
-            grad_pi = jax.grad(_log_pdf)(u, M0, G0, Mt, Gt)
-        else:
-            grad_pi = 0. * u
-        m0 = AuxiliaryM0(u=u[0], sqrt_half_delta=scale[0], grad=grad_pi[0])
-        mt = AuxiliaryMtDynamics(params=(u[1:], scale[1:], grad_pi[1:]))
-        if gradient:
-            g0 = GradientAuxiliaryG0(M0=M0, G0=G0, u=u[0], sqrt_half_delta=scale[0], grad=grad_pi[0])
-            gt = GradientAuxiliaryGt(Mt=Mt, Gt=Gt, params=(u[1:], scale[1:], grad_pi[1:]))
-        else:
-            g0 = AuxiliaryG0(M0=M0, G0=G0)
-            gt = AuxiliaryGt(Mt=Mt, Gt=Gt)
-        return m0, g0, mt, gt
-
     if not parallel:
-        return get_base_kernel(factory, N, backward, Pt, coupled=True)
+        return _get_classical_coupled_kernel(M0, G0, Mt, Gt, N, backward, Pt, gradient)
     else:
-        raise NotImplementedError("Parallel version not implemented yet.")
+        return _get_parallel_kernel(M0, G0, Mt, Gt, N, gradient)
 
 
 def _get_classical_coupled_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int,
@@ -197,9 +182,7 @@ def _get_classical_coupled_kernel(M0: Distribution, G0: UnivariatePotential, Mt:
             gt_1 = GradientAuxiliaryGt(Mt=Mt, Gt=Gt, params=(u_1[1:], scale[1:], grad_pi_1[1:]))
             gt_2 = GradientAuxiliaryGt(Mt=Mt, Gt=Gt, params=(u_2[1:], scale[1:], grad_pi_2[1:]))
         else:
-
             g0_1 = g0_2 = AuxiliaryG0(M0=M0, G0=G0)
-
             gt_1 = gt_2 = AuxiliaryGt(Mt=Mt, Gt=Gt)
 
         return cm0, g0_1, g0_2, cmt, gt_1, gt_2
@@ -208,10 +191,49 @@ def _get_classical_coupled_kernel(M0: Distribution, G0: UnivariatePotential, Mt:
 
 
 def _get_parallel_coupled_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int,
-                                 Pt: Optional[Dynamics], gradient):
+                                 Pt: Optional[Dynamics], gradient=False):
+    if gradient:
+        raise NotImplementedError("Gradient model not implemented for parallel coupled particle Gibbs.")
+
     # This function uses the classes defined below
-    def coupled_factory(u_1, u_2, scale):
-        pass
+    def factory(u_1, u_2, scale):
+        cmt = CoupledAuxiliaryMtDistribution(params=(u_1, u_2, scale, None, None))
+        qt_1 = qt_2 = None
+
+        g0_1 = g0_2 = AuxiliaryG0(M0=M0, G0=G0)
+        gt_1 = gt_2 = AuxiliaryGt(Mt=Mt, Gt=Gt)
+
+        return cmt, g0_1, g0_2, gt_1, gt_2, qt_1, qt_2
+
+    def kernel(key, state: CoupledSamplerState, delta):
+        # Housekeeping
+        state_1, state_2 = state.state_1, state.state_2
+        x_1, x_2 = state_1.x, state_2.x
+        T = x_1.shape[0]
+
+        sqrt_half_delta = jnp.sqrt(0.5 * delta)
+        if jnp.ndim(sqrt_half_delta) == 0:
+            sqrt_half_delta = sqrt_half_delta * jnp.ones((T,))
+        auxiliary_key, key = jax.random.split(key)
+
+        # Auxiliary observations
+        mvn_coupling = lambda k, a, b: lindvall_roger(k, a, b, sqrt_half_delta, sqrt_half_delta)
+        aux_keys = jax.random.split(auxiliary_key, T)
+        u_1, u_2, _ = jax.vmap(mvn_coupling)(aux_keys, x_1, x_2)
+
+        cmt, g0_1, g0_2, gt_1, gt_2, qt_1, qt_2 = factory(u_1, u_2, sqrt_half_delta)
+
+        _, auxiliary_kernel = get_coupled_pit_kernel(cmt, g0_1, g0_2, gt_1, gt_2, qt_1, qt_2)
+        return auxiliary_kernel(key, state)
+
+    def init(x_1, x_2):
+        T, *_ = x_1.shape
+        ancestors = jnp.zeros((T,), dtype=jnp.int_)
+        state_1 = CSMCState(x=x_1, updated=ancestors != 0)
+        state_2 = CSMCState(x=x_2, updated=ancestors != 0)
+        coupled_state = CoupledSamplerState(state_1=state_1, state_2=state_2,
+                                            flags=jnp.zeros((T,), dtype=jnp.bool_))
+        return coupled_state
 
 
 def _log_pdf(u, M0, G0, Mt, Gt):
