@@ -7,15 +7,13 @@ from aux_samplers.kalman import get_kernel as get_generic_kernel
 from model import log_potential
 
 
-def get_kernel(ys, m0, P0, F, Q, b, parallel, log_potential_args, order=1):
+def get_kernel(ys, m0, P0, F, Q, b, parallel, log_potential_args, order=1, coupled=False, **coupling_kwargs):
     d = m0.shape[0]
     T = ys.shape[0]
     nu, prec = log_potential_args
     prec_diag = prec[np.diag_indices(d)].todense()
 
     # We batch the model
-
-
 
     eyes = jnp.ones((T, d, 1, 1))
     zeros = jnp.zeros((T, d, 1))
@@ -39,7 +37,6 @@ def get_kernel(ys, m0, P0, F, Q, b, parallel, log_potential_args, order=1):
         cs = zeros
         return aux_ys, Hs, Rs, cs
 
-
     def second_order_observations_factory(x, u, delta):
         # For a single time step!
         grad = jax.grad(log_potential)(x.reshape(-1, d), ys, nu, prec)
@@ -57,9 +54,13 @@ def get_kernel(ys, m0, P0, F, Q, b, parallel, log_potential_args, order=1):
         return out + log_potential(x.reshape(-1, d), ys, *log_potential_args)
 
     observations_factory = first_order_observations_factory if order == 1 else second_order_observations_factory
-    init_, kernel = get_generic_kernel(dynamics_factory, observations_factory, log_likelihood_fn, parallel)
+    init_, kernel = get_generic_kernel(dynamics_factory, observations_factory, log_likelihood_fn, parallel, coupled,
+                                       **coupling_kwargs)
 
-    def init(xs):
-        return init_(jnp.expand_dims(xs, -1))
-
+    if not coupled:
+        def init(xs):
+            return init_(jnp.expand_dims(xs, -1))
+    else:
+        def init(xs_1, xs_2):
+            return init_(jnp.expand_dims(xs_1, -1), jnp.expand_dims(xs_2, -1))
     return init, kernel
