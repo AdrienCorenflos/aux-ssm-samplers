@@ -35,24 +35,24 @@ parser.set_defaults(verbose=True)
 # Experiment arguments
 parser.add_argument("--n-experiments", dest="n_experiments", type=int, default=10)
 parser.add_argument("--T", dest="T", type=int, default=2 ** 9)
-parser.add_argument("--D", dest="D", type=int, default=8)
-parser.add_argument("--NU", dest="NU", type=int, default=10)
+parser.add_argument("--D", dest="D", type=int, default=4)
+parser.add_argument("--NU", dest="NU", type=int, default=1)
 parser.add_argument("--n-samples", dest="n_samples", type=int, default=10_000)
-parser.add_argument("--burnin", dest="burnin", type=int, default=2_500)
+parser.add_argument("--burnin", dest="burnin", type=int, default=5_000)
 parser.add_argument("--target-alpha", dest="target_alpha", type=float,
-                    default=0.5)
+                    default=0.2)
 parser.add_argument("--lr", dest="lr", type=float, default=0.5)
 parser.add_argument("--beta", dest="beta", type=float, default=0.05)
-parser.add_argument("--delta-init", dest="delta_init", type=float, default=1e-3)
+parser.add_argument("--delta-init", dest="delta_init", type=float, default=1e-5)
 parser.add_argument("--seed", dest="seed", type=int, default=1234)
-parser.add_argument("--style", dest="style", type=str, default="kalman")
+parser.add_argument("--style", dest="style", type=str, default="csmc")
 parser.add_argument("--gradient", action='store_true')
 parser.add_argument('--no-gradient', dest='gradient', action='store_false')
 parser.set_defaults(gradient=False)
 parser.add_argument("--backward", action='store_true')
 parser.add_argument('--no-backward', dest='backward', action='store_false')
 parser.set_defaults(backward=True)
-parser.add_argument("--N", dest="N", type=int, default=10)
+parser.add_argument("--N", dest="N", type=int, default=100)
 
 args = parser.parse_args()
 
@@ -166,7 +166,7 @@ def one_experiment(random_state, exp_key, verbose=args.verbose):
     data_key, init_key, burnin_key, sample_key = jax.random.split(exp_key, 4)
     true_xs, ys = get_data(random_state, SIGMA_X, RY, TAU, args.NU, args.D, args.T)
     stats, init_xs, ys, pct_accepted, burnin_delta = _one_experiment(ys, init_key, burnin_key, sample_key, verbose)
-    return stats, true_xs, init_xs, pct_accepted, burnin_delta
+    return stats, true_xs, ys, init_xs, pct_accepted, burnin_delta
 
 
 def full_experiment():
@@ -181,7 +181,7 @@ def full_experiment():
     for i in tqdm.trange(args.n_experiments,
                          desc=f"Style: {args.style}, T: {args.T}, N: {args.N}, D: {args.D}, gpu: {args.gpu}, grad: {args.gradient}"):
         start = time.time()
-        (esjd, traj, squared_exp), true_xs, true_init, pct_accepted, burnin_delta = one_experiment(np_random_state,
+        (esjd, traj, squared_exp), true_xs, true_ys, true_init, pct_accepted, burnin_delta = one_experiment(np_random_state,
                                                                                                    keys[i])
 
         ejsd_per_key[i, :] = esjd.block_until_ready()
@@ -207,6 +207,9 @@ def full_experiment():
                         color="tab:orange", alpha=0.2)
         ax.plot(np.arange(args.T), true_xs[:, -1], color="tab:blue")
         ax.plot(np.arange(args.T), true_init[:, -1], color="gray", alpha=0.5, linestyle="--")
+        lims = ax.get_ylim()
+        ax.scatter(np.arange(args.T), true_ys[:, -1], alpha=0.5)
+        ax.set_ylim(*lims)
         plt.show()
 
         fig, ax = plt.subplots(figsize=(10, 5))

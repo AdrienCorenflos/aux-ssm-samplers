@@ -2,7 +2,7 @@
 Implements the classical cSMC kernel from the seminal pMCMC paper by Andrieu et al. (2010). We also implement the
 backward sampling step of Whiteley.
 """
-
+import math
 from typing import Optional
 
 import jax
@@ -14,7 +14,7 @@ from ..math.utils import normalize
 
 
 def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int,
-               backward: bool = False, Pt: Optional[Dynamics] = None):
+               backward: bool = False, Pt: Optional[Dynamics] = None, ess_threshold: float = 1.):
     """
     Get a cSMC kernel.
 
@@ -34,6 +34,9 @@ def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Pote
         Whether to perform backward sampling or not. If True, the dynamics must implement a valid logpdf method.
     Pt:
         Dynamics of the true model. If None, it is assumed to be the same as Mt.
+    ess_threshold: float, optional
+        Threshold for the effective sample size. If the ESS is below this threshold, resampling is performed.
+        Default is 0.5.
     Returns:
     --------
     kernel: Callable
@@ -49,7 +52,7 @@ def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Pote
 
     def kernel(key, state):
         key_fwd, key_bwd = jax.random.split(key)
-        w_T, xs, log_ws, As = _csmc(key_fwd, state.x, M0, G0, Mt, Gt, N)
+        w_T, xs, log_ws, As = _csmc(key_fwd, state.x, M0, G0, Mt, Gt, N, ess_threshold)
         if not backward:
             x, ancestors = _backward_scanning_pass(key_bwd, w_T, xs, As)
         else:
@@ -64,7 +67,7 @@ def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Pote
     return init, kernel
 
 
-def _csmc(key, x_star, M0, G0, Mt, Gt, N):
+def _csmc(key, x_star, M0, G0, Mt, Gt, N, ess_threshold=0.5):
     T = x_star.shape[0]
     keys = jax.random.split(key, T)
 
@@ -75,15 +78,25 @@ def _csmc(key, x_star, M0, G0, Mt, Gt, N):
 
     # Compute initial weights and normalize
     log_w0 = G0(x0)
-    w0 = normalize(log_w0)
+    zero_weights = jnp.ones((N,)) * math.log(N)
     # jax.debug.print("\n\n")
 
     def body(carry, inp):
-        t_m_1, w_t_m_1, x_t_m_1 = carry
+        t_m_1, log_w_t_m_1, x_t_m_1 = carry
         Mt_params, Gt_params, x_star_t, key_t = inp
         resampling_key, sampling_key = jax.random.split(key_t)
         # Conditional resampling
-        A_t = multinomial(resampling_key, w_t_m_1)
+        w_t_m_1 = normalize(log_w_t_m_1)
+        ess_value = 1 / jnp.sum(w_t_m_1 ** 2)
+        A_t_resample = multinomial(resampling_key, w_t_m_1)
+        A_t_pass = jnp.arange(N)
+
+        # jax.debug.print("t, ess_value: {}, {}", t_m_1, ess_value)
+        resample = ess_value < ess_threshold * N
+        A_t = jax.lax.select(resample,
+                             A_t_resample, A_t_pass)
+
+        log_w_t_m_1 = jax.lax.select(resample, zero_weights, log_w_t_m_1)
         x_t_m_1 = jnp.take(x_t_m_1, A_t, axis=0)
 
         # Sample new particles
@@ -91,20 +104,21 @@ def _csmc(key, x_star, M0, G0, Mt, Gt, N):
         x_t = x_t.at[0].set(x_star_t)
 
         # Compute weights
-        log_w_t = Gt(x_t, x_t_m_1, Gt_params)
+        log_w_t = Gt(x_t, x_t_m_1, Gt_params) + log_w_t_m_1
         # jax.debug.print("t, log_w_t: {}, {}", t_m_1, log_w_t)
         # jax.debug.print("\n")
-        w_t = normalize(log_w_t)
+
         # Return next step
-        next_carry = (t_m_1 + 1, w_t, x_t)
+        next_carry = (t_m_1 + 1, log_w_t, x_t)
         save = (x_t, log_w_t, A_t)
 
         return next_carry, save
 
-    (_, w_T, _), (xs, log_ws, As) = jax.lax.scan(body, (0, w0, x0), (Mt.params, Gt.params, x_star[1:], keys[1:]))
+    (_, log_wT, _), (xs, log_ws, As) = jax.lax.scan(body, (0, log_w0, x0), (Mt.params, Gt.params, x_star[1:], keys[1:]))
 
     log_ws = jnp.insert(log_ws, 0, log_w0, axis=0)
     xs = jnp.insert(xs, 0, x0, axis=0)
+    w_T = normalize(log_wT)
     return w_T, xs, log_ws, As
 
 

@@ -24,6 +24,7 @@ setuptools.setup(
         "jaxopt>=0.5.5",
         "jaxtyping>=0.2.8",
         "matplotlib>=3.6.3"
+        "numba>=0.56.4",
         "statsmodels>=0.13.5",
         "tensorflow_probability>=0.19.0",
         "tqdm>=4.64.1",
