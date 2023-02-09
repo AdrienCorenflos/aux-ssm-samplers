@@ -14,7 +14,7 @@ from ..math.utils import normalize
 
 
 def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int,
-               backward: bool = False, Pt: Optional[Dynamics] = None, ess_threshold: float = 1.):
+               backward: bool = False, Pt: Optional[Dynamics] = None, ess_threshold: float = 0.5):
     """
     Get a cSMC kernel.
 
@@ -78,7 +78,7 @@ def _csmc(key, x_star, M0, G0, Mt, Gt, N, ess_threshold=0.5):
 
     # Compute initial weights and normalize
     log_w0 = G0(x0)
-    zero_weights = jnp.ones((N,)) * math.log(N)
+    zero_weights = -jnp.ones((N,)) * math.log(N)
     # jax.debug.print("\n\n")
 
     def body(carry, inp):
@@ -92,7 +92,7 @@ def _csmc(key, x_star, M0, G0, Mt, Gt, N, ess_threshold=0.5):
         A_t_pass = jnp.arange(N)
 
         # jax.debug.print("t, ess_value: {}, {}", t_m_1, ess_value)
-        resample = ess_value < ess_threshold * N
+        resample = ess_value <= ess_threshold * N
         A_t = jax.lax.select(resample,
                              A_t_resample, A_t_pass)
 
