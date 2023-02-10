@@ -9,9 +9,9 @@ from aux_samplers.csmc import get_independent_kernel, Distribution, UnivariatePo
 from model import log_potential_one
 
 
-def get_kernel(ys, sigma_x, nu, prec, n_samples, backward, parallel, gradient, resampling):
+def get_kernel(ys, sigma_x, nu, prec, n_samples, backward, parallel, gradient):
     M0, G0, Mt, Gt = get_feynman_kac(ys, sigma_x, nu, prec)
-    return get_independent_kernel(M0, G0, Mt, Gt, n_samples, backward, Mt, gradient, parallel, resampling)
+    return get_independent_kernel(M0, G0, Mt, Gt, n_samples, backward, Mt, gradient, parallel)
 
 
 def get_feynman_kac(ys, sigma_x, nu, prec):

@@ -19,8 +19,7 @@ from .._primitives.math.mvn.couplings import reflection_maximal, reflection, lin
 
 
 def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int,
-               backward: bool = False, Pt: Optional[Dynamics] = None, gradient: bool = False, parallel: bool = False,
-               resampling: str= 'systematic'):
+               backward: bool = False, Pt: Optional[Dynamics] = None, gradient: bool = False, parallel: bool = False):
     """
     Get a local auxiliary kernel with separable proposals.
 
@@ -44,8 +43,6 @@ def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Pote
         Whether to use the gradient model in the proposal or not.
     parallel: bool
         Whether to use the parallel particle Gibbs or not.
-    resampling: str
-        Resampling function to use. Can be 'systematic' or 'multinomial'.
 
     Returns:
     --------
@@ -55,13 +52,13 @@ def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Pote
         Function to initialize the state of the sampler given a trajectory.
     """
     if not parallel:
-        return _get_classical_kernel(M0, G0, Mt, Gt, N, backward, Pt, gradient, resampling)
+        return _get_classical_kernel(M0, G0, Mt, Gt, N, backward, Pt, gradient)
     else:
         return _get_parallel_kernel(M0, G0, Mt, Gt, N, gradient)
 
 
 def _get_classical_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int,
-                          backward: bool, Pt: Optional[Dynamics], gradient, resampling):
+                          backward: bool, Pt: Optional[Dynamics], gradient):
     # This function uses the classes defined below
     def factory(u, scale):
         if gradient:
@@ -78,7 +75,7 @@ def _get_classical_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamic
             gt = AuxiliaryGt(Mt=Mt, Gt=Gt)
         return m0, g0, mt, gt
 
-    return get_base_kernel(factory, N, backward, Pt, resampling=resampling)
+    return get_base_kernel(factory, N, backward, Pt)
 
 
 def _get_parallel_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int,
@@ -194,7 +191,7 @@ def _get_classical_coupled_kernel(M0: Distribution, G0: UnivariatePotential, Mt:
 
 
 def _get_parallel_coupled_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int,
-                                 Pt: Optional[Dynamics], gradient=False):
+                                 _Pt: Optional[Dynamics], gradient=False):
     if gradient:
         raise NotImplementedError("Gradient model not implemented for parallel coupled particle Gibbs.")
 
@@ -226,7 +223,7 @@ def _get_parallel_coupled_kernel(M0: Distribution, G0: UnivariatePotential, Mt: 
 
         cmt, g0_1, g0_2, gt_1, gt_2, qt_1, qt_2 = factory(u_1, u_2, sqrt_half_delta)
 
-        _, auxiliary_kernel = get_coupled_pit_kernel(cmt, g0_1, g0_2, gt_1, gt_2, qt_1, qt_2)
+        _, auxiliary_kernel = get_coupled_pit_kernel(cmt, g0_1, g0_2, gt_1, gt_2, N, qt_1, qt_2)
         return auxiliary_kernel(key, state)
 
     def init(x_1, x_2):
@@ -238,6 +235,7 @@ def _get_parallel_coupled_kernel(M0: Distribution, G0: UnivariatePotential, Mt: 
                                             flags=jnp.zeros((T,), dtype=jnp.bool_))
         return coupled_state
 
+    return init, kernel
 
 def _log_pdf(u, M0, G0, Mt, Gt):
     # Compute the log-pdf of the auxiliary variable

@@ -35,7 +35,7 @@ parser.set_defaults(verbose=True)
 # Experiment arguments
 parser.add_argument("--n-experiments", dest="n_experiments", type=int, default=10)
 parser.add_argument("--T", dest="T", type=int, default=2 ** 9)
-parser.add_argument("--D", dest="D", type=int, default=8)
+parser.add_argument("--D", dest="D", type=int, default=16)
 parser.add_argument("--NU", dest="NU", type=int, default=10)
 parser.add_argument("--n-samples", dest="n_samples", type=int, default=10_000)
 parser.add_argument("--burnin", dest="burnin", type=int, default=2_500)
@@ -53,6 +53,9 @@ parser.add_argument("--backward", action='store_true')
 parser.add_argument('--no-backward', dest='backward', action='store_false')
 parser.set_defaults(backward=True)
 parser.add_argument("--N", dest="N", type=int, default=10)
+parser.add_argument("--K", dest="K", type=int, default=10)
+parser.add_argument("--M", dest="M", type=int, default=100)
+
 
 args = parser.parse_args()
 
@@ -143,7 +146,7 @@ def _one_experiment(ys, init_key, burnin_key, sample_key, verbose=args.verbose):
     else:
         raise NotImplementedError
 
-    init_xs = init_x_fn(init_key, ys, SIGMA_X, args.NU, PREC, 1_000)
+    init_xs = init_x_fn(init_key, ys, SIGMA_X, args.NU, PREC, 110_000)
 
     init_state = init_fn(init_xs)
 

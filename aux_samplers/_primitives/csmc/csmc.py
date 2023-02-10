@@ -14,7 +14,7 @@ from ..math.utils import normalize
 
 
 def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int,
-               backward: bool = False, Pt: Optional[Dynamics] = None, resampling="systematic"):
+               backward: bool = False, Pt: Optional[Dynamics] = None):
     """
     Get a cSMC kernel.
 
@@ -44,13 +44,6 @@ def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Pote
     init: Callable
         Function to initialize the state of the sampler given a trajectory.
     """
-    if resampling == "systematic":
-        resampling = systematic
-    elif resampling == "multinomial":
-        resampling = multinomial
-    else:
-        raise ValueError(f"Resampling method {resampling} not recognized.")
-
     if backward and Pt is None:
         Pt = Mt
     elif backward and not hasattr(Pt, "logpdf"):
@@ -58,7 +51,7 @@ def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Pote
 
     def kernel(key, state):
         key_fwd, key_bwd = jax.random.split(key)
-        w_T, xs, log_ws, As = _csmc(key_fwd, state.x, M0, G0, Mt, Gt, N, resampling)
+        w_T, xs, log_ws, As = _csmc(key_fwd, state.x, M0, G0, Mt, Gt, N, multinomial)
         if not backward:
             x, ancestors = _backward_scanning_pass(key_bwd, w_T, xs, As)
         else:
