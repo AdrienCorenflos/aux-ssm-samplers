@@ -19,7 +19,8 @@ from .._primitives.math.mvn.couplings import reflection_maximal, reflection, lin
 
 
 def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int,
-               backward: bool = False, Pt: Optional[Dynamics] = None, gradient: bool = False, parallel: bool = False):
+               backward: bool = False, Pt: Optional[Dynamics] = None, gradient: bool = False, parallel: bool = False,
+               resampling: str= 'systematic'):
     """
     Get a local auxiliary kernel with separable proposals.
 
@@ -43,6 +44,8 @@ def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Pote
         Whether to use the gradient model in the proposal or not.
     parallel: bool
         Whether to use the parallel particle Gibbs or not.
+    resampling: str
+        Resampling function to use. Can be 'systematic' or 'multinomial'.
 
     Returns:
     --------
@@ -52,13 +55,13 @@ def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Pote
         Function to initialize the state of the sampler given a trajectory.
     """
     if not parallel:
-        return _get_classical_kernel(M0, G0, Mt, Gt, N, backward, Pt, gradient)
+        return _get_classical_kernel(M0, G0, Mt, Gt, N, backward, Pt, gradient, resampling)
     else:
         return _get_parallel_kernel(M0, G0, Mt, Gt, N, gradient)
 
 
 def _get_classical_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int,
-                          backward: bool, Pt: Optional[Dynamics], gradient):
+                          backward: bool, Pt: Optional[Dynamics], gradient, resampling):
     # This function uses the classes defined below
     def factory(u, scale):
         if gradient:
@@ -75,7 +78,7 @@ def _get_classical_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamic
             gt = AuxiliaryGt(Mt=Mt, Gt=Gt)
         return m0, g0, mt, gt
 
-    return get_base_kernel(factory, N, backward, Pt)
+    return get_base_kernel(factory, N, backward, Pt, resampling=resampling)
 
 
 def _get_parallel_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int,

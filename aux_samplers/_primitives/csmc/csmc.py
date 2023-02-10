@@ -9,12 +9,12 @@ import jax
 from jax import numpy as jnp, tree_map
 
 from .base import Distribution, UnivariatePotential, Dynamics, Potential, CSMCState
-from .resamplings import systematic
+from .resamplings import systematic, multinomial
 from ..math.utils import normalize
 
 
 def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int,
-               backward: bool = False, Pt: Optional[Dynamics] = None, resampling=systematic):
+               backward: bool = False, Pt: Optional[Dynamics] = None, resampling="systematic"):
     """
     Get a cSMC kernel.
 
@@ -44,6 +44,12 @@ def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Pote
     init: Callable
         Function to initialize the state of the sampler given a trajectory.
     """
+    if resampling == "systematic":
+        resampling = systematic
+    elif resampling == "multinomial":
+        resampling = multinomial
+    else:
+        raise ValueError(f"Resampling method {resampling} not recognized.")
 
     if backward and Pt is None:
         Pt = Mt
@@ -79,6 +85,7 @@ def _csmc(key, x_star, M0, G0, Mt, Gt, N, resampling):
     # Compute initial weights and normalize
     log_w0 = G0(x0)
     w0 = normalize(log_w0)
+
     # jax.debug.print("\n\n")
 
     def body(carry, inp):

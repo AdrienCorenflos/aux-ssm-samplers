@@ -17,7 +17,8 @@ def get_kernel(factory: Callable,
                N: int,
                backward: bool = False,
                Pt: Optional[Dynamics] = None,
-               coupled: bool = False):
+               coupled: bool = False,
+               resampling: str = "systematic"):
     """
     Get a local auxiliary kernel.
     All factories take as input the current value of the auxiliary variable `u_t` and the value of \sqrt{\delta/2}
@@ -39,6 +40,10 @@ def get_kernel(factory: Callable,
         Dynamics of the true model.
     coupled: bool
         Whether this returns the coupled version of the kernel or not.
+    resampling: str
+        Resampling function to use. Can be 'systematic' or 'multinomial'.
+
+
     Returns
     -------
     kernel: Callable
@@ -53,7 +58,7 @@ def get_kernel(factory: Callable,
         raise ValueError("`Pt` must implement a valid logpdf method.")
 
     if not coupled:
-        return _get_kernel(factory, N, backward, Pt)
+        return _get_kernel(factory, N, backward, Pt, resampling)
     else:
         return _get_coupled_kernel(factory, N, backward, Pt)
 
@@ -61,7 +66,8 @@ def get_kernel(factory: Callable,
 def _get_kernel(factory: Callable[[Array, Numeric], Tuple[Distribution, UnivariatePotential, Dynamics, Potential]],
                 N: int,
                 backward: bool,
-                Pt: Dynamics):
+                Pt: Dynamics,
+                resampling):
     def kernel(key, state, delta):
         # Housekeeping
         x = state.x
@@ -77,7 +83,7 @@ def _get_kernel(factory: Callable[[Array, Numeric], Tuple[Distribution, Univaria
 
         m0, g0, mt, gt = factory(u, sqrt_half_delta)
 
-        _, auxiliary_kernel = get_standard_kernel(m0, g0, mt, gt, N, backward=backward, Pt=Pt)
+        _, auxiliary_kernel = get_standard_kernel(m0, g0, mt, gt, N, backward=backward, Pt=Pt, resampling=resampling)
         return auxiliary_kernel(key, state)
 
     def init(x):

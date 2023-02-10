@@ -25,7 +25,7 @@ def test_multinomial_resampling():
 
 
 @pytest.mark.parametrize("seed", [42, 43, 44])
-@pytest.mark.parametrize("M", [100,1000])
+@pytest.mark.parametrize("M", [100, 1000])
 def test_systematic_resampling(seed, M):
     """Test the conditional multinomial resampling."""
     N = 100
@@ -34,13 +34,12 @@ def test_systematic_resampling(seed, M):
     n_keys = 100
     keys = jax.random.split(key, n_keys)
 
-    weights = jax.random.uniform(data_key, shape=(M,))
+    weights = jax.random.uniform(data_key, shape=(M,)) ** 2
     weights /= jnp.sum(weights)
     indices_test = np.empty((n_keys, N), dtype=np.int32)
     for i, key in enumerate(keys):
         indices_test[i] = _sys_resampling(weights, *jax.random.uniform(key, shape=(3,)), N)
     indices = jax.vmap(systematic, in_axes=[0, None, None])(keys, weights, N)
-
     npt.assert_allclose(indices, indices_test, atol=1e-3)
     npt.assert_allclose(indices[:, 0], 0, atol=1e-3)
 
