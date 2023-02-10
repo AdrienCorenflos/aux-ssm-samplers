@@ -84,10 +84,10 @@ def sequential_update(y, m, P, H, c, R):
     y_diff = y - y_hat
     S = R + H @ P @ H.T
 
-    if y.shape[0] == 1:
+    if y.shape[-1] == 1:
         chol_S = S ** 0.5
         ell_inc = norm.logpdf(y[0], y_hat[0], chol_S[0, 0])
-        G = (P @ H.T) / chol_S[0, 0]
+        G = (P @ H.T) / S
     else:
         chol_S = jnp.linalg.cholesky(S)
         ell_inc = logpdf(y, y_hat, chol_S)
