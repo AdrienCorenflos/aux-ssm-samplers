@@ -46,7 +46,10 @@ def sampling(key: PRNGKey, ms: Array, Ps: Array, lgssm: LGSSM) -> Array:
 
     # Sample from the last time step
     xs = jnp.zeros_like(ms)
-    chol_T = jnp.linalg.cholesky(Ps[-1])
+    if Ps.shape[-1] == 1:
+        chol_T = jnp.sqrt(Ps[-1])
+    else:
+        chol_T = jnp.linalg.cholesky(Ps[-1])
     x_T = rvs(key_T, ms[-1], chol_T)
     xs = xs.at[-1].set(x_T)
 
@@ -55,7 +58,10 @@ def sampling(key: PRNGKey, ms: Array, Ps: Array, lgssm: LGSSM) -> Array:
 
     # Sample from x0 | xT
     m0 = E_0T[0] @ x_T + g_0T[0]
-    chol_0T = jnp.linalg.cholesky(L_0T[0])
+    if L_0T.shape[-1] == 1:
+        chol_0T = jnp.sqrt(L_0T[0])
+    else:
+        chol_0T = jnp.linalg.cholesky(L_0T[0])
     x0 = rvs(key_0, m0, chol_0T)
     xs = xs.at[0].set(x0)
 
@@ -71,7 +77,10 @@ def sampling(key: PRNGKey, ms: Array, Ps: Array, lgssm: LGSSM) -> Array:
 def _sample(key, x1, x2, aux_elem):
     eps = jax.random.normal(key, x1.shape)
     G, Gamma, w, V = aux_elem
-    chol = jnp.linalg.cholesky(V)
+    if V.shape[-1] == 1:
+        chol = jnp.sqrt(V)
+    else:
+        chol = jnp.linalg.cholesky(V)
     mean = jnp.einsum("...ij,...j->...i", G, x1) + jnp.einsum("...ij,...j->...i", Gamma, x2) + w
     return mean + jnp.einsum("...ij,...j->...i", chol, eps)
 
@@ -95,8 +104,10 @@ def _combination_operator_impl(E1, g1, L1, E2, g2, L2):
     E = E1 @ E2
     g = g1 + E1 @ g2
     L = L1 + E1 @ L2 @ E1.T
-
-    G = solve(L, E1 @ L2, assume_a="pos").T
+    if L.shape[-1] == 1:
+        G = L2 * E1.T / L
+    else:
+        G = solve(L, E1 @ L2, assume_a="pos").T
     Gamma = E2 - G @ E
     w = g2 - G @ g
     V = L2 - G @ L @ G.T
@@ -106,7 +117,11 @@ def _combination_operator_impl(E1, g1, L1, E2, g2, L2):
 
 @partial(jnp.vectorize, signature="(dx),(dx,dx),(dx,dx),(dx,dx),(dx)->(dx,dx),(dx),(dx,dx)")
 def _init_elems(m, P, F, Q, b):
-    E = solve(F @ P @ F.T + Q, F @ P, assume_a="pos").T
+    if m.shape[-1] == 1:
+        E = F * P / (F @ P @ F.T + Q)
+
+    else:
+        E = solve(F @ P @ F.T + Q, F @ P, assume_a="pos").T
     g = m - E @ (F @ m + b)
     L = P - E @ F @ P
     return E, g, L

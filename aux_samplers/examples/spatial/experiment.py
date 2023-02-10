@@ -34,21 +34,21 @@ parser.set_defaults(verbose=True)
 
 # Experiment arguments
 parser.add_argument("--n-experiments", dest="n_experiments", type=int, default=10)
-parser.add_argument("--T", dest="T", type=int, default=2 ** 9)
-parser.add_argument("--D", dest="D", type=int, default=16)
+parser.add_argument("--T", dest="T", type=int, default=2 ** 10)
+parser.add_argument("--D", dest="D", type=int, default=8)
 parser.add_argument("--NU", dest="NU", type=int, default=1)
 parser.add_argument("--n-samples", dest="n_samples", type=int, default=10_000)
 parser.add_argument("--burnin", dest="burnin", type=int, default=5_000)
 parser.add_argument("--target-alpha", dest="target_alpha", type=float,
-                    default=0.25)
+                    default=0.5)
 parser.add_argument("--lr", dest="lr", type=float, default=0.1)
 parser.add_argument("--beta", dest="beta", type=float, default=0.01)
 parser.add_argument("--delta-init", dest="delta_init", type=float, default=1e-5)
 parser.add_argument("--seed", dest="seed", type=int, default=42)
-parser.add_argument("--style", dest="style", type=str, default="csmc")
+parser.add_argument("--style", dest="style", type=str, default="kalman")
 parser.add_argument("--gradient", action='store_true')
 parser.add_argument('--no-gradient', dest='gradient', action='store_false')
-parser.set_defaults(gradient=False)
+parser.set_defaults(gradient=True)
 parser.add_argument("--backward", action='store_true')
 parser.add_argument('--no-backward', dest='backward', action='store_false')
 parser.set_defaults(backward=True)
@@ -76,9 +76,8 @@ PREC = make_precision(TAU, RY, args.D)
 def stats_fn(x_1, x_2):
     # squared jumping distance averaged across dimensions, and first and second moments
     if "kalman" in args.style:
-        return jnp.mean((x_2 - x_1) ** 2, (-2, -1)), x_2[..., 0], x_2[..., 0] ** 2
-    else:
-        return jnp.mean((x_2 - x_1) ** 2, -1), x_2, x_2 ** 2
+        x_1, x_2 = x_1[..., 0], x_2[..., 0]
+    return (x_2 - x_1) ** 2, x_2, x_2 ** 2
 
 
 # KERNEL
@@ -174,20 +173,33 @@ def full_experiment():
     np_random_state = np.random.RandomState(args.seed)
     keys = jax.random.split(jax.random.PRNGKey(args.seed), args.n_experiments)
 
-    ejsd_per_key = np.ones((args.n_experiments, args.T)) * np.nan
+    ejsd_per_key = np.ones((args.n_experiments, args.T, args.D ** 2)) * np.nan
     acceptance_rate_per_key = np.ones((args.n_experiments, args.T)) * np.nan
     delta_per_key = np.ones((args.n_experiments, args.T)) * np.nan
     time_per_key = np.ones((args.n_experiments,)) * np.nan
+    true_xs_per_key = np.ones((args.n_experiments, args.T, args.D ** 2)) * np.nan
+    mean_traj_per_key = np.ones((args.n_experiments, args.T, args.D ** 2)) * np.nan
+    std_traj_per_key = np.ones((args.n_experiments, args.T, args.D ** 2)) * np.nan
     for i in tqdm.trange(args.n_experiments,
                          desc=f"Style: {args.style}, T: {args.T}, N: {args.N}, D: {args.D}, gpu: {args.gpu}, grad: {args.gradient}"):
+        # try:
         start = time.time()
-        (esjd, traj, squared_exp), true_xs, true_ys, true_init, pct_accepted, burnin_delta = one_experiment(np_random_state,
-                                                                                                   keys[i])
+        (esjd, traj, squared_exp), true_xs, true_ys, true_init, pct_accepted, burnin_delta = one_experiment(
+            np_random_state,
+            keys[i])
+        traj.block_until_ready()
 
-        ejsd_per_key[i, :] = esjd.block_until_ready()
+        true_xs_per_key[i, ...] = true_xs
+        ejsd_per_key[i, ...] = esjd
         acceptance_rate_per_key[i, :] = pct_accepted
         delta_per_key[i, :] = burnin_delta
+        mean_traj_per_key[i, ...] = traj
+        std_traj_per_key[i, ...] = np.std(squared_exp - traj ** 2)
         time_per_key[i] = time.time() - start
+
+        # except Exception as e:  # noqa
+        #     print(f"Experiment {i} failed for reason {e}")
+        #     continue
         # try:
         #     start = time.time()
         #     (esjd, *_), _, _, _, pct_accepted, burnin_delta = one_experiment(keys[i])
@@ -217,20 +229,21 @@ def full_experiment():
         ax.semilogy(np.arange(args.T), esjd, color="tab:blue", label="EJSD")
         twinx = ax.twinx()
         if "kalman" in args.style:
-            twinx.plot(np.arange(args.T), pct_accepted * np.ones((args.T,)), color="tab:orange", label="acceptance rate")
+            twinx.plot(np.arange(args.T), pct_accepted * np.ones((args.T,)), color="tab:orange",
+                       label="acceptance rate")
         else:
             twinx.plot(np.arange(args.T), pct_accepted, color="tab:orange", label="acceptance rate")
         twinx.set_ylim(0, 1)
         ax.legend()
         plt.show()
-    return ejsd_per_key, acceptance_rate_per_key, delta_per_key, time_per_key
+    return ejsd_per_key, acceptance_rate_per_key, delta_per_key, time_per_key, true_xs_per_key, mean_traj_per_key, std_traj_per_key
 
 
 def main():
     import os
     with jax.disable_jit(args.debug):
         with jax.debug_nans(args.debug_nans):
-            ejsd_per_key, acceptance_rate_per_key, delta_per_key, time_per_key = full_experiment()
+            ejsd_per_key, acceptance_rate_per_key, delta_per_key, time_per_key, true_xs_per_key, mean_traj_per_key, std_traj_per_key = full_experiment()
     file_name = f"results/{args.style}-{args.D}-{args.T}-{args.N}-{args.parallel}-{args.gradient}.npz"
     if not os.path.isdir("results"):
         os.mkdir("results")
@@ -238,7 +251,10 @@ def main():
              ejsd_per_key=ejsd_per_key,
              acceptance_rate_per_key=acceptance_rate_per_key,
              delta_per_key=delta_per_key,
-             time_per_key=time_per_key)
+             time_per_key=time_per_key,
+             true_xs_per_key=true_xs_per_key,
+             mean_traj_per_key=mean_traj_per_key,
+             std_traj_per_key=std_traj_per_key, )
 
 
 if __name__ == "__main__":

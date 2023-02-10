@@ -83,16 +83,23 @@ def mean_and_chol(F, Q, b, m, P):
     gain: Array
         Gain to go from time t+1 to t.
     """
+    dim = m.shape[0]
     S = F @ P @ F.T + Q  # noqa: bad static type checking
     S = 0.5 * (S + S.T)
-    gain = P @ solve(S, F, assume_a="pos").T
+
+    if dim == 1:
+        gain = P * F / S
+    else:
+        gain = P @ solve(S, F, assume_a="pos").T
 
     inc_Sig = P - gain @ S @ gain.T
     inc_Sig = 0.5 * (inc_Sig + inc_Sig.T)
 
     inc_m = m - gain @ (F @ m + b)
-
-    L = jnp.linalg.cholesky(inc_Sig)
+    if dim == 1:
+        L = jnp.sqrt(inc_Sig)
+    else:
+        L = jnp.linalg.cholesky(inc_Sig)
     # When there is 0 uncertainty, the Cholesky decomposition is not defined.
     L = jnp.nan_to_num(L)
     return inc_m, L, gain
@@ -107,7 +114,11 @@ def _sampling_init_one(F, Q, b, m, P, eps):
 
 @partial(jnp.vectorize, signature="(dx),(dx,dx),(dx)->(dx,dx),(dx)")
 def _sample_last_step(m, P, eps):
-    L = jnp.nan_to_num(jnp.linalg.cholesky(P))
+    if P.shape[0] == 1:
+        L = jnp.sqrt(P)
+    else:
+        L = jnp.linalg.cholesky(P)
+    L = jnp.nan_to_num(L)
     last_sample = m + L @ eps
     gain = jnp.zeros_like(P)
     return gain, last_sample

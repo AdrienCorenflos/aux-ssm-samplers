@@ -211,9 +211,16 @@ def divide_and_conquer(key: PRNGKey, lgssm_1: LGSSM, lgssm_2: LGSSM, ms_1, Ps_1,
     xs_2 = jnp.zeros_like(ms_2)
     are_coupled = jnp.zeros(xs_1.shape[:-1], dtype=bool)
 
+    if Ps_1.shape[-1] == 1:
+        chol_Ps_1_m_1 = jnp.sqrt(Ps_1[-1])
+        chol_Ps_2_m_1 = jnp.sqrt(Ps_2[-1])
+    else:
+        chol_Ps_1_m_1 = jnp.linalg.cholesky(Ps_1[-1])
+        chol_Ps_2_m_1 = jnp.linalg.cholesky(Ps_2[-1])
+
     xT_1, xT_2, xT_coupled = _coupling_method_fn_wrapper(key_T,
-                                                         ms_1[-1], jnp.linalg.cholesky(Ps_1[-1]),
-                                                         ms_2[-1], jnp.linalg.cholesky(Ps_2[-1]), coupling_method_fn)
+                                                         ms_1[-1], chol_Ps_1_m_1,
+                                                         ms_2[-1], chol_Ps_2_m_1, coupling_method_fn)
 
     xs_1, xs_2, are_coupled = jax.tree_util.tree_map(lambda z, y: z.at[-1].set(y), (xs_1, xs_2, are_coupled),
                                                      (xT_1, xT_2, xT_coupled))
@@ -225,9 +232,17 @@ def divide_and_conquer(key: PRNGKey, lgssm_1: LGSSM, lgssm_2: LGSSM, ms_1, Ps_1,
     # Sample from x0 | xT
     m0_1 = jnp.einsum("...ij,...j->...i", E_0T_1[0], xT_1) + g_0T_1[0]
     m0_2 = jnp.einsum("...ij,...j->...i", E_0T_2[0], xT_2) + g_0T_2[0]
+
+
+    if L_0T_1.shape[-1] == 1:
+        chol_L_0T_1_0 = jnp.sqrt(L_0T_1[0])
+        chol_L_0T_2_0 = jnp.sqrt(L_0T_2[0])
+    else:
+        chol_L_0T_1_0 = jnp.linalg.cholesky(L_0T_1[0])
+        chol_L_0T_2_0 = jnp.linalg.cholesky(L_0T_2[0])
     x0_1, x0_2, x0_coupled = _coupling_method_fn_wrapper(key_0,
-                                                         m0_1, jnp.linalg.cholesky(L_0T_1[0]),
-                                                         m0_2, jnp.linalg.cholesky(L_0T_2[0]),
+                                                         m0_1, chol_L_0T_1_0,
+                                                         m0_2, chol_L_0T_2_0,
                                                          coupling_method_fn)
 
     xs_1, xs_2, are_coupled = jax.tree_util.tree_map(lambda z, y: z.at[0].set(y), (xs_1, xs_2, are_coupled),
@@ -255,7 +270,10 @@ def divide_and_conquer(key: PRNGKey, lgssm_1: LGSSM, lgssm_2: LGSSM, ms_1, Ps_1,
 
 def _mean_chol(x1, x2, aux_elem):
     G, Gamma, w, V = aux_elem
-    chol = jnp.linalg.cholesky(V)
+    if V.shape[-1] == 1:
+        chol = jnp.sqrt(V)
+    else:
+        chol = jnp.linalg.cholesky(V)
     mean = jnp.einsum("...ij,...j->...i", G, x1) + jnp.einsum("...ij,...j->...i", Gamma, x2) + w
     return mean, chol
 

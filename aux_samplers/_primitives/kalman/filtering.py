@@ -5,6 +5,7 @@ import jax
 import jax.numpy as jnp
 from chex import Numeric
 from jax.scipy.linalg import solve, cho_solve
+from jax.scipy.stats import norm
 from jax.tree_util import tree_map
 
 from .base import LGSSM
@@ -83,9 +84,14 @@ def sequential_update(y, m, P, H, c, R):
     y_diff = y - y_hat
     S = R + H @ P @ H.T
 
-    chol_S = jnp.linalg.cholesky(S)
-    ell_inc = logpdf(y, y_hat, chol_S)
-    G = cho_solve((chol_S, True), H @ P).T
+    if y.shape[0] == 1:
+        chol_S = S ** 0.5
+        ell_inc = norm.logpdf(y[0], y_hat[0], chol_S[0, 0])
+        G = (P @ H.T) / chol_S[0, 0]
+    else:
+        chol_S = jnp.linalg.cholesky(S)
+        ell_inc = logpdf(y, y_hat, chol_S)
+        G = cho_solve((chol_S, True), H @ P).T
     m = m + G @ y_diff
     P = P - G @ S @ G.T
     P = 0.5 * (P + P.T)
@@ -130,9 +136,12 @@ def _filtering_op_impl(A1, b1, C1, eta1, J1, A2, b2, C2, eta2, J2):
 
     IpCJ = I_dim + jnp.dot(C1, J2)
     IpJC = I_dim + jnp.dot(J2, C1)
-
-    AIpCJ_inv = solve(IpCJ.T, A2.T).T
-    AIpJC_inv = solve(IpJC.T, A1).T
+    if dim == 1:
+        AIpCJ_inv = A2 / IpCJ
+        AIpJC_inv = A1 / IpJC
+    else:
+        AIpCJ_inv = solve(IpCJ.T, A2.T).T
+        AIpJC_inv = solve(IpJC.T, A1).T
 
     A = jnp.dot(AIpCJ_inv, A1)
     b = jnp.dot(AIpCJ_inv, b1 + jnp.dot(C1, eta2)) + b2
@@ -158,7 +167,10 @@ def _filtering_init_one(F, Q, b, H, R, c, y, m, P):
     P = F @ P @ F.T + Q
 
     S = H @ P @ H.T + R
-    S_invH_T = solve(S, H, assume_a="pos").T
+    if y.shape[0] == 1:
+        S_invH_T = H.T / S[0, 0]
+    else:
+        S_invH_T = solve(S, H, assume_a="pos").T
     K = P @ S_invH_T
     A = F - K @ H @ F
 

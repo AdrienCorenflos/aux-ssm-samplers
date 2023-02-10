@@ -132,14 +132,18 @@ def init_x_fn(key, ys, sigma_x, nu, prec, N):
 
     def fwd_body(x, inps):
         y, op_key = inps
+        op_key_1, op_key_2 = jax.random.split(op_key)
         log_w = log_potential_one(x, y, nu, prec)
         log_w = log_w - jax.scipy.special.logsumexp(log_w)
         w = jnp.exp(log_w)
-        next_x = jax.random.choice(key, x, shape=(N,), p=w)
-        next_x += sigma_x * jax.random.normal(key, shape=(N, d))
+        # systematic resampling
+        u = jax.random.uniform(op_key_1, shape=())
+        linspace = (u + jnp.arange(N)) / N
+        ancestors = jnp.searchsorted(jnp.cumsum(w, axis=-1), linspace)
+        next_x = x[ancestors] + sigma_x * jax.random.normal(op_key_2, shape=(N, d))
         return next_x, (log_w, x)
 
-    _, (log_ws, xs) = jax.lax.scan(fwd_body, x0, (ys, jax.random.split(key, T)))
+    _, (log_ws, xs) = jax.lax.scan(fwd_body, x0, (ys, jax.random.split(fwd_key, T)))
 
     def bwd_body(x, inps):
         log_w, x_prev, op_key = inps
