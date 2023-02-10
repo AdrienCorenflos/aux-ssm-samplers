@@ -45,8 +45,7 @@ parser.add_argument("--lr", dest="lr", type=float, default=0.1)
 parser.add_argument("--beta", dest="beta", type=float, default=0.01)
 parser.add_argument("--delta-init", dest="delta_init", type=float, default=1e-5)
 parser.add_argument("--seed", dest="seed", type=int, default=42)
-parser.add_argument("--style", dest="style", type=str, default="kalman")
-parser.add_argument("--resampling", dest="resampling", type=str, default="multinomial")
+parser.add_argument("--style", dest="style", type=str, default="csmc")
 parser.add_argument("--gradient", action='store_true')
 parser.add_argument('--no-gradient', dest='gradient', action='store_false')
 parser.set_defaults(gradient=False)
@@ -136,7 +135,7 @@ def _one_experiment(ys, init_key, burnin_key, sample_key, verbose=args.verbose):
         delta_init = args.delta_init
     elif args.style == "csmc":
         init_fn, kernel_fn = get_csmc_kernel(ys, SIGMA_X, args.NU, PREC, args.N, args.backward, args.parallel,
-                                             args.gradient, resampling=args.resampling)
+                                             args.gradient)
         delta_init = args.delta_init * jnp.ones((args.T,))
     elif args.style == "csmc-guided":
         init_fn, kernel_fn = get_guided_csmc_kernel(ys, SIGMA_X, args.NU, PREC, args.N, args.backward, args.gradient)
