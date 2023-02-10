@@ -30,15 +30,15 @@ from chex import ArrayTree
 from jax import tree_map, vmap
 from jax.scipy.special import logsumexp
 
-from ..resamplings import multinomial, coupled_multinomial
+from ..resamplings import systematic, coupled_multinomial
 from ...math.couplings import index_max_coupling
 
 STATE = Any
 
 
-@partial(jax.jit, static_argnums=(2, 3, 4), donate_argnums=(0, 1))
+@partial(jax.jit, static_argnums=(2, 3, 4, 5), donate_argnums=(0, 1))
 def operator(inputs_a: STATE, inputs_b: STATE, log_weight_fn: Callable[[ArrayTree, ArrayTree, Any], float],
-             n_samples: int, last_step: bool):
+             n_samples: int, last_step: bool, resampling=systematic):
     """
     Operator corresponding to the stitching operation of the conditional dSMC algorithm.
 
@@ -59,7 +59,8 @@ def operator(inputs_a: STATE, inputs_b: STATE, log_weight_fn: Callable[[ArrayTre
         Number of samples in the resampling
     last_step: bool
         Whether we are at the last time step or not. If so, we only need one trajectory.
-
+    resampling: callable
+        Resampling function to use. Should be one of `multinomial`, `systematic`.
     Returns
     -------
 
@@ -79,7 +80,7 @@ def operator(inputs_a: STATE, inputs_b: STATE, log_weight_fn: Callable[[ArrayTre
         idx = jax.random.choice(keys_b[0], n_samples ** 2, p=jnp.ravel(weights))
         l_idx, r_idx = jnp.unravel_index(idx, (n_samples, n_samples))
     else:
-        idx = multinomial(keys_b[0], jnp.ravel(weights), n_samples)
+        idx = resampling(keys_b[0], jnp.ravel(weights), n_samples)
         l_idx, r_idx = jax.vmap(jnp.unravel_index, in_axes=[0, None])(idx, (n_samples, n_samples))
 
     return _gather_results(l_idx, r_idx, n_samples,

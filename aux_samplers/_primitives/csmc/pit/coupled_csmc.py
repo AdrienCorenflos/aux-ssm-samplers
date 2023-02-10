@@ -74,7 +74,7 @@ def get_coupled_kernel(cMt: CoupledDistribution, G0_1: UnivariatePotential, G0_2
 
     def init(x_star_1, x_star_2):
         T, *_ = x_star_1.shape
-        ancestors = jnp.zeros((T,), dtype=jnp.int_)
+        ancestors = jnp.zeros((T,), dtype=int)
         state_1 = CSMCState(x=x_star_1, updated=ancestors == 0)
         state_2 = CSMCState(x=x_star_2, updated=ancestors == 0)
         coupled_state = CoupledSamplerState(state_1=state_1, state_2=state_2, flags=jnp.zeros((T,), dtype=jnp.bool_))

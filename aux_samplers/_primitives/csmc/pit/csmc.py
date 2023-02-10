@@ -11,9 +11,11 @@ from jax.scipy.special import logsumexp
 from .dc_map import dc_map
 from .operator import operator
 from ..base import Distribution, UnivariatePotential, Potential, CSMCState
+from ..resamplings import systematic
 
 
-def get_kernel(Mt: Distribution, G0: UnivariatePotential, Gt: Potential, N: int, Qt: Optional[Distribution] = None):
+def get_kernel(Mt: Distribution, G0: UnivariatePotential, Gt: Potential, N: int, Qt: Optional[Distribution] = None,
+               resampling=systematic):
     """
     Get a parallel-in-time cSMC kernel. This will target the model (up to proportionality)
     .. math::
@@ -44,6 +46,8 @@ def get_kernel(Mt: Distribution, G0: UnivariatePotential, Gt: Potential, N: int,
         Total number of particles to use in the cSMC sampler.
     Qt:
         Optional. If provided, this will be used to compute the importance weights.
+    resampling:
+        Resampling function to use.
 
     Returns:
     --------
@@ -54,18 +58,18 @@ def get_kernel(Mt: Distribution, G0: UnivariatePotential, Gt: Potential, N: int,
     """
 
     def kernel(key, state):
-        x, ancestors = _csmc(key, state.x, Mt, G0, Gt, N, Qt)
+        x, ancestors = _csmc(key, state.x, Mt, G0, Gt, N, Qt, resampling)
         return CSMCState(x=x, updated=ancestors != 0)
 
     def init(x_star):
         T, *_ = x_star.shape
-        ancestors = jnp.zeros((T,), dtype=jnp.int_)
+        ancestors = jnp.zeros((T,), dtype=int)
         return CSMCState(x=x_star, updated=ancestors == 0)
 
     return init, kernel
 
 
-def _csmc(key, x_star, Mt, G0, Gt, N, Qt):
+def _csmc(key, x_star, Mt, G0, Gt, N, Qt, resampling):
     T = x_star.shape[0]
     sampling_key, resampling_key = jax.random.split(key)
     sampling_keys = jax.random.split(sampling_key, T)
@@ -104,8 +108,8 @@ def _csmc(key, x_star, Mt, G0, Gt, N, Qt):
     def log_weight_fn(x_t_1, x_t, params_t):
         return Gt(x_t, x_t_1, params_t)
 
-    csmc_operator = lambda inputs_a, inputs_b: operator(inputs_a, inputs_b, log_weight_fn, N, False)
-    last_csmc_operator = lambda inputs_a, inputs_b: operator(inputs_a, inputs_b, log_weight_fn, N, True)
+    csmc_operator = lambda inputs_a, inputs_b: operator(inputs_a, inputs_b, log_weight_fn, N, False, resampling)
+    last_csmc_operator = lambda inputs_a, inputs_b: operator(inputs_a, inputs_b, log_weight_fn, N, True, None)
 
     inputs = states, resampling_keys, params
 

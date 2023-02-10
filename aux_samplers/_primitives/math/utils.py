@@ -3,6 +3,7 @@ from functools import partial
 
 import jax
 import jax.numpy as jnp
+from jax.scipy.special import logsumexp
 
 LOG_HALF = math.log(0.5)
 
@@ -34,10 +35,8 @@ def normalize(log_weights):
     weights : Array
         Unnormalized weights.
     """
-    weights = jnp.exp(log_weights - jnp.max(log_weights))
-    weights /= jnp.sum(weights)
-
-    return weights
+    log_weights -= logsumexp(log_weights)
+    return jnp.exp(log_weights)
 
 
 @partial(jnp.vectorize, signature="(d,d)->(d,d)")

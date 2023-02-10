@@ -82,7 +82,7 @@ def _get_kernel(factory: Callable[[Array, Numeric], Tuple[Distribution, Univaria
 
     def init(x):
         T, *_ = x.shape
-        ancestors = jnp.zeros((T,), dtype=jnp.int_)
+        ancestors = jnp.zeros((T,), dtype=int)
         return CSMCState(x=x, updated=ancestors != 0)
 
     return init, kernel
@@ -117,7 +117,7 @@ def _get_coupled_kernel(
 
     def init(x_1, x_2):
         T, *_ = x_1.shape
-        ancestors = jnp.zeros((T,), dtype=jnp.int_)
+        ancestors = jnp.zeros((T,), dtype=int)
         state_1 = CSMCState(x=x_1, updated=ancestors != 0)
         state_2 = CSMCState(x=x_2, updated=ancestors != 0)
         coupled_state = CoupledSamplerState(state_1=state_1, state_2=state_2,
