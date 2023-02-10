@@ -210,32 +210,32 @@ def full_experiment():
         #     time_per_key[i] = time.time() - start
         # except:  # noqa
         #     continue
-        from matplotlib import pyplot as plt
-        fig, ax = plt.subplots(figsize=(25, 10))
-
-        ax.plot(np.arange(args.T), traj[..., -1], color="tab:orange")
-        std = np.sqrt(squared_exp[..., -1] - traj[..., -1] ** 2)
-        ax.fill_between(np.arange(args.T), traj[..., -1] + 2 * std, traj[..., -1] - 2 * std,
-                        color="tab:orange", alpha=0.2)
-        ax.plot(np.arange(args.T), true_xs[:, -1], color="tab:blue")
-        ax.plot(np.arange(args.T), true_init[:, -1], color="gray", alpha=0.5, linestyle="--")
-        lims = ax.get_ylim()
-        ax.scatter(np.arange(args.T), true_ys[:, -1], alpha=0.5)
-        ax.set_ylim(*lims)
-        plt.show()
-
-        fig, ax = plt.subplots(figsize=(10, 5))
-        fig.suptitle(f"Style: {args.style}, grad: {args.gradient}, parallel: {args.parallel}")
-        ax.semilogy(np.arange(args.T), esjd, color="tab:blue", label="EJSD")
-        twinx = ax.twinx()
-        if "kalman" in args.style:
-            twinx.plot(np.arange(args.T), pct_accepted * np.ones((args.T,)), color="tab:orange",
-                       label="acceptance rate")
-        else:
-            twinx.plot(np.arange(args.T), pct_accepted, color="tab:orange", label="acceptance rate")
-        twinx.set_ylim(0, 1)
-        ax.legend()
-        plt.show()
+        # from matplotlib import pyplot as plt
+        # fig, ax = plt.subplots(figsize=(25, 10))
+        #
+        # ax.plot(np.arange(args.T), traj[..., -1], color="tab:orange")
+        # std = np.sqrt(squared_exp[..., -1] - traj[..., -1] ** 2)
+        # ax.fill_between(np.arange(args.T), traj[..., -1] + 2 * std, traj[..., -1] - 2 * std,
+        #                 color="tab:orange", alpha=0.2)
+        # ax.plot(np.arange(args.T), true_xs[:, -1], color="tab:blue")
+        # ax.plot(np.arange(args.T), true_init[:, -1], color="gray", alpha=0.5, linestyle="--")
+        # lims = ax.get_ylim()
+        # ax.scatter(np.arange(args.T), true_ys[:, -1], alpha=0.5)
+        # ax.set_ylim(*lims)
+        # plt.show()
+        #
+        # fig, ax = plt.subplots(figsize=(10, 5))
+        # fig.suptitle(f"Style: {args.style}, grad: {args.gradient}, parallel: {args.parallel}")
+        # ax.semilogy(np.arange(args.T), esjd, color="tab:blue", label="EJSD")
+        # twinx = ax.twinx()
+        # if "kalman" in args.style:
+        #     twinx.plot(np.arange(args.T), pct_accepted * np.ones((args.T,)), color="tab:orange",
+        #                label="acceptance rate")
+        # else:
+        #     twinx.plot(np.arange(args.T), pct_accepted, color="tab:orange", label="acceptance rate")
+        # twinx.set_ylim(0, 1)
+        # ax.legend()
+        # plt.show()
     return ejsd_per_key, acceptance_rate_per_key, delta_per_key, time_per_key, true_xs_per_key, mean_traj_per_key, std_traj_per_key
 
 
