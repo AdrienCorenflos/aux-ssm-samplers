@@ -161,10 +161,10 @@ def _one_experiment(ys, init_key, burnin_key, sample_key, verbose=args.verbose):
         import time
         return time.time()
 
-    tic = jax.pure_callback(tic_fn, jax.ShapeDtypeStruct((), jnp.float_), burnin_avg_acceptance)
+    tic = jax.pure_callback(tic_fn, jax.ShapeDtypeStruct((), burnin_avg_acceptance.dtype), burnin_avg_acceptance)
     _, stats, _, _, _, pct_accepted = loop(sample_key, burnin_delta, burnin_state, kernel_fn, None, args.n_samples,
                                            verbose)
-    toc = jax.pure_callback(tic_fn, jax.ShapeDtypeStruct((), jnp.float_), pct_accepted)
+    toc = jax.pure_callback(tic_fn, jax.ShapeDtypeStruct((), pct_accepted.dtype), pct_accepted)
     return toc - tic, stats, init_xs, ys, pct_accepted, burnin_delta
 
 
