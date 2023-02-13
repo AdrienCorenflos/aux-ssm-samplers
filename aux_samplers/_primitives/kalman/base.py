@@ -3,6 +3,7 @@ from typing import NamedTuple
 import jax
 import jax.numpy as jnp
 from chex import Numeric
+from jax.scipy.stats import norm
 
 from ..base import Array
 from ..math import logpdf
@@ -115,13 +116,20 @@ def prior_logpdf(xs: Array, lgssm: LGSSM) -> Numeric:
     """
     m0, P0, Fs, Qs, bs, *_ = lgssm
 
-    chol_P0 = jnp.linalg.cholesky(P0)
-    out = jnp.nansum(logpdf(xs[0], m0, chol_P0))
-
-    chol_Qs = jnp.linalg.cholesky(Qs)
     pred_xs = jnp.einsum("...ij,...j->...i", Fs, xs[:-1]) + bs
 
-    trans_log_liks = logpdf(xs[1:], pred_xs, chol_Qs)
+    if m0.shape[-1] == 1:
+        chol_P0 = jnp.sqrt(P0)
+        chol_Qs = jnp.sqrt(Qs)
+        out = jnp.nansum(norm.logpdf(xs[0, ..., 0], m0[..., 0], chol_P0[..., 0, 0]))
+        trans_log_liks = norm.logpdf(xs[1:, ..., 0], pred_xs[..., 0], chol_Qs[..., 0, 0])
+
+    else:
+        chol_P0 = jnp.linalg.cholesky(P0)
+        chol_Qs = jnp.linalg.cholesky(Qs)
+        out = jnp.nansum(logpdf(xs[0], m0, chol_P0))
+        trans_log_liks = logpdf(xs[1:], pred_xs, chol_Qs)
+
     out += jnp.nansum(trans_log_liks)
     return out
 
@@ -147,8 +155,12 @@ def log_likelihood(ys: Array, xs: Array, lgssm: LGSSM) -> Numeric:
         The log likelihood of the observations for a trajectory.
     """
     *_, Hs, Rs, cs = lgssm
-
-    chol_Rs = jnp.linalg.cholesky(Rs)
     pred_ys = jnp.einsum("...ij,...j->...i", Hs, xs) + cs
-    out = logpdf(ys, pred_ys, chol_Rs)
+
+    if cs.shape[-1] == 1:
+        chol_Rs = jnp.sqrt(Rs)
+        out = norm.logpdf(ys[..., 0], pred_ys[..., 0], chol_Rs[..., 0, 0])
+    else:
+        chol_Rs = jnp.linalg.cholesky(Rs)
+        out = logpdf(ys, pred_ys, chol_Rs)
     return jnp.nansum(out)

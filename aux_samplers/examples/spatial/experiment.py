@@ -49,7 +49,7 @@ parser.add_argument("--seed", dest="seed", type=int, default=42)
 parser.add_argument("--style", dest="style", type=str, default="kalman")
 parser.add_argument("--gradient", action='store_true')
 parser.add_argument('--no-gradient', dest='gradient', action='store_false')
-parser.set_defaults(gradient=False)
+parser.set_defaults(gradient=True)
 parser.add_argument("--backward", action='store_true')
 parser.add_argument('--no-backward', dest='backward', action='store_false')
 parser.set_defaults(backward=True)
@@ -77,9 +77,8 @@ PREC = make_precision(TAU, RY, args.D)
 def stats_fn(x_1, x_2):
     # squared jumping distance averaged across dimensions, and first and second moments
     if "kalman" in args.style:
-        return jnp.mean((x_2 - x_1) ** 2, (-2, -1)), x_2[..., 0], x_2[..., 0] ** 2
-    else:
-        return jnp.mean((x_2 - x_1) ** 2, -1), x_2, x_2 ** 2
+        x_1, x_2 = x_1[..., 0], x_2[..., 0]
+    return (x_2 - x_1) ** 2, x_2, x_2 ** 2
 
 
 # KERNEL
@@ -176,20 +175,33 @@ def full_experiment():
     np_random_state = np.random.RandomState(args.seed)
     keys = jax.random.split(jax.random.PRNGKey(args.seed), args.n_experiments)
 
-    ejsd_per_key = np.ones((args.n_experiments, args.T)) * np.nan
+    ejsd_per_key = np.ones((args.n_experiments, args.T, args.D ** 2)) * np.nan
     acceptance_rate_per_key = np.ones((args.n_experiments, args.T)) * np.nan
     delta_per_key = np.ones((args.n_experiments, args.T)) * np.nan
     time_per_key = np.ones((args.n_experiments,)) * np.nan
+    true_xs_per_key = np.ones((args.n_experiments, args.T, args.D ** 2)) * np.nan
+    mean_traj_per_key = np.ones((args.n_experiments, args.T, args.D ** 2)) * np.nan
+    std_traj_per_key = np.ones((args.n_experiments, args.T, args.D ** 2)) * np.nan
     for i in tqdm.trange(args.n_experiments,
                          desc=f"Style: {args.style}, T: {args.T}, N: {args.N}, D: {args.D}, gpu: {args.gpu}, grad: {args.gradient}"):
+        # try:
         start = time.time()
-        (esjd, traj, squared_exp), true_xs, true_ys, true_init, pct_accepted, burnin_delta = one_experiment(np_random_state,
-                                                                                                   keys[i])
+        (esjd, traj, squared_exp), true_xs, true_ys, true_init, pct_accepted, burnin_delta = one_experiment(
+            np_random_state,
+            keys[i])
+        traj.block_until_ready()
 
-        ejsd_per_key[i, :] = esjd.block_until_ready()
+        true_xs_per_key[i, ...] = true_xs
+        ejsd_per_key[i, ...] = esjd
         acceptance_rate_per_key[i, :] = pct_accepted
         delta_per_key[i, :] = burnin_delta
+        mean_traj_per_key[i, ...] = traj
+        std_traj_per_key[i, ...] = np.std(squared_exp - traj ** 2)
         time_per_key[i] = time.time() - start
+
+        # except Exception as e:  # noqa
+        #     print(f"Experiment {i} failed for reason {e}")
+        #     continue
         # try:
         #     start = time.time()
         #     (esjd, *_), _, _, _, pct_accepted, burnin_delta = one_experiment(keys[i])
@@ -200,39 +212,40 @@ def full_experiment():
         #     time_per_key[i] = time.time() - start
         # except:  # noqa
         #     continue
-        from matplotlib import pyplot as plt
-        fig, ax = plt.subplots(figsize=(25, 10))
-
-        ax.plot(np.arange(args.T), traj[..., -1], color="tab:orange")
-        std = np.sqrt(squared_exp[..., -1] - traj[..., -1] ** 2)
-        ax.fill_between(np.arange(args.T), traj[..., -1] + 2 * std, traj[..., -1] - 2 * std,
-                        color="tab:orange", alpha=0.2)
-        ax.plot(np.arange(args.T), true_xs[:, -1], color="tab:blue")
-        ax.plot(np.arange(args.T), true_init[:, -1], color="gray", alpha=0.5, linestyle="--")
-        lims = ax.get_ylim()
-        ax.scatter(np.arange(args.T), true_ys[:, -1], alpha=0.5)
-        ax.set_ylim(*lims)
-        plt.show()
-
-        fig, ax = plt.subplots(figsize=(10, 5))
-        fig.suptitle(f"Style: {args.style}, grad: {args.gradient}, parallel: {args.parallel}")
-        ax.semilogy(np.arange(args.T), esjd, color="tab:blue", label="EJSD")
-        twinx = ax.twinx()
-        if "kalman" in args.style:
-            twinx.plot(np.arange(args.T), pct_accepted * np.ones((args.T,)), color="tab:orange", label="acceptance rate")
-        else:
-            twinx.plot(np.arange(args.T), pct_accepted, color="tab:orange", label="acceptance rate")
-        twinx.set_ylim(0, 1)
-        ax.legend()
-        plt.show()
-    return ejsd_per_key, acceptance_rate_per_key, delta_per_key, time_per_key
+        # from matplotlib import pyplot as plt
+        # fig, ax = plt.subplots(figsize=(25, 10))
+        #
+        # ax.plot(np.arange(args.T), traj[..., -1], color="tab:orange")
+        # std = np.sqrt(squared_exp[..., -1] - traj[..., -1] ** 2)
+        # ax.fill_between(np.arange(args.T), traj[..., -1] + 2 * std, traj[..., -1] - 2 * std,
+        #                 color="tab:orange", alpha=0.2)
+        # ax.plot(np.arange(args.T), true_xs[:, -1], color="tab:blue")
+        # ax.plot(np.arange(args.T), true_init[:, -1], color="gray", alpha=0.5, linestyle="--")
+        # lims = ax.get_ylim()
+        # ax.scatter(np.arange(args.T), true_ys[:, -1], alpha=0.5)
+        # ax.set_ylim(*lims)
+        # plt.show()
+        #
+        # fig, ax = plt.subplots(figsize=(10, 5))
+        # fig.suptitle(f"Style: {args.style}, grad: {args.gradient}, parallel: {args.parallel}")
+        # ax.semilogy(np.arange(args.T), esjd, color="tab:blue", label="EJSD")
+        # twinx = ax.twinx()
+        # if "kalman" in args.style:
+        #     twinx.plot(np.arange(args.T), pct_accepted * np.ones((args.T,)), color="tab:orange",
+        #                label="acceptance rate")
+        # else:
+        #     twinx.plot(np.arange(args.T), pct_accepted, color="tab:orange", label="acceptance rate")
+        # twinx.set_ylim(0, 1)
+        # ax.legend()
+        # plt.show()
+    return ejsd_per_key, acceptance_rate_per_key, delta_per_key, time_per_key, true_xs_per_key, mean_traj_per_key, std_traj_per_key
 
 
 def main():
     import os
     with jax.disable_jit(args.debug):
         with jax.debug_nans(args.debug_nans):
-            ejsd_per_key, acceptance_rate_per_key, delta_per_key, time_per_key = full_experiment()
+            ejsd_per_key, acceptance_rate_per_key, delta_per_key, time_per_key, true_xs_per_key, mean_traj_per_key, std_traj_per_key = full_experiment()
     file_name = f"results/{args.style}-{args.D}-{args.T}-{args.N}-{args.parallel}-{args.gradient}.npz"
     if not os.path.isdir("results"):
         os.mkdir("results")
@@ -240,7 +253,10 @@ def main():
              ejsd_per_key=ejsd_per_key,
              acceptance_rate_per_key=acceptance_rate_per_key,
              delta_per_key=delta_per_key,
-             time_per_key=time_per_key)
+             time_per_key=time_per_key,
+             true_xs_per_key=true_xs_per_key,
+             mean_traj_per_key=mean_traj_per_key,
+             std_traj_per_key=std_traj_per_key, )
 
 
 if __name__ == "__main__":

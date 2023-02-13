@@ -38,7 +38,7 @@ class AuxiliaryM0(Distribution):
         m0, P0, u = self.m0, self.P0, self.u
         d = m0.shape[0]
         zero_F, zero_b = jnp.zeros((d, d)), jnp.zeros((d,))
-        mu_t, chol_Lambda_t = get_mu_chol_Lambda_t(m0, zero_F, P0, zero_b, u, self.sqrt_half_delta, self.y, self.grad)
+        mu_t, chol_Lambda_t = get_mu_chol_Lambda_t(zero_b, zero_F, P0, m0, u, self.sqrt_half_delta, self.y, self.grad)
         out = mu_t[None, ...] + jax.random.normal(key, (n, d)) @ chol_Lambda_t.T
         return out
 
@@ -61,7 +61,7 @@ class AuxiliaryG0(UnivariatePotential):
         m0, P0, u = self.m0, self.P0, self.u
         d = m0.shape[0]
         zero_F, zero_b = jnp.zeros((d, d)), jnp.zeros((d,))
-        mu_t, chol_Lambda_t = get_mu_chol_Lambda_t(m0, zero_F, P0, zero_b, u, self.sqrt_half_delta, self.y, self.grad)
+        mu_t, chol_Lambda_t = get_mu_chol_Lambda_t(zero_b, zero_F, P0, m0, u, self.sqrt_half_delta, self.y, self.grad)
 
         out = obs_logpdf(x, self.y)  # g0
         out += mvn.logpdf(x, m0, jnp.linalg.cholesky(P0))  # m0
@@ -127,6 +127,11 @@ def get_mu_chol_Lambda_t(x, F, Q, b, u, scale, y, grad):
 
     mu_t = x_pred + K @ (u - x_pred)
     chol_Lambda_t = jnp.linalg.cholesky(Lambda_t)
+
+    # another option is to use a linearisation of the locally optimal proposal.
+    # if grad:
+    #     temp = 0.5 * (jnp.exp(-mu_t) * y ** 2 - 2)
+    #     mu_t += Lambda_t @ temp
 
     # When scale is too small, the covariance matrix Lambda_t can numerically be singular.
     chol_Lambda_t = jnp.where(jnp.isfinite(chol_Lambda_t), chol_Lambda_t,
