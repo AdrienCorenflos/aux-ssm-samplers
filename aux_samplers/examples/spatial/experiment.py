@@ -1,4 +1,5 @@
 import argparse
+import time
 from functools import partial
 
 import jax
@@ -34,11 +35,11 @@ parser.add_argument('--no-verbose', dest='verbose', action='store_false')
 parser.set_defaults(verbose=True)
 
 # Experiment arguments
-parser.add_argument("--n-experiments", dest="n_experiments", type=int, default=51)
+parser.add_argument("--n-experiments", dest="n_experiments", type=int, default=21)
 parser.add_argument("--T", dest="T", type=int, default=2 ** 10)
 parser.add_argument("--D", dest="D", type=int, default=8)
 parser.add_argument("--NU", dest="NU", type=int, default=1)
-parser.add_argument("--n-samples", dest="n_samples", type=int, default=10_000)
+parser.add_argument("--n-samples", dest="n_samples", type=int, default=20_000)
 parser.add_argument("--burnin", dest="burnin", type=int, default=5_000)
 parser.add_argument("--target-alpha", dest="target_alpha", type=float,
                     default=0.5)
@@ -46,7 +47,7 @@ parser.add_argument("--lr", dest="lr", type=float, default=0.1)
 parser.add_argument("--beta", dest="beta", type=float, default=0.01)
 parser.add_argument("--delta-init", dest="delta_init", type=float, default=1e-5)
 parser.add_argument("--seed", dest="seed", type=int, default=42)
-parser.add_argument("--style", dest="style", type=str, default="kalman")
+parser.add_argument("--style", dest="style", type=str, default="csmc-guided")
 parser.add_argument("--gradient", action='store_true')
 parser.add_argument('--no-gradient', dest='gradient', action='store_false')
 parser.set_defaults(gradient=True)
@@ -58,6 +59,7 @@ parser.add_argument("--N", dest="N", type=int, default=25)
 args = parser.parse_args()
 
 # BACKEND CONFIG
+NOW = time.time()
 jax.config.update("jax_enable_x64", False)
 if not args.gpu:
     jax.config.update("jax_platform_name", "cpu")
@@ -75,7 +77,8 @@ PREC = make_precision(TAU, RY, args.D)
 
 # STATS FN
 def stats_fn(x_1, x_2):
-    # squared jumping distance averaged across dimensions, and first and second moments
+    """ Squared jumping distance per dimensions, and first and second moments
+    """
     if "kalman" in args.style:
         x_1, x_2 = x_1[..., 0], x_2[..., 0]
     return (x_2 - x_1) ** 2, x_2, x_2 ** 2
@@ -149,27 +152,42 @@ def _one_experiment(ys, init_key, burnin_key, sample_key, verbose=args.verbose):
     init_state = init_fn(init_xs)
 
     # BURNIN
-    _, _, burnin_state, burnin_delta, burnin_avg_acceptance, _ = loop(burnin_key,
-                                                                      delta_init,
-                                                                      init_state,
-                                                                      kernel_fn,
-                                                                      delta_adaptation,
-                                                                      args.burnin,
-                                                                      verbose)
+    *_, burnin_state, burnin_delta, burnin_avg_acceptance, _ = loop(burnin_key,
+                                                                    delta_init,
+                                                                    init_state,
+                                                                    kernel_fn,
+                                                                    delta_adaptation,
+                                                                    args.burnin,
+                                                                    verbose)
 
-    def tic_fn(_):
-        import time
-        return time.time()
+    from jax.experimental.host_callback import call
 
-    tic = jax.pure_callback(tic_fn, jax.ShapeDtypeStruct((), burnin_avg_acceptance.dtype), burnin_avg_acceptance)
-    _, stats, _, _, _, pct_accepted = loop(sample_key, burnin_delta, burnin_state, kernel_fn, None, args.n_samples,
-                                           verbose)
-    toc = jax.pure_callback(tic_fn, jax.ShapeDtypeStruct((), pct_accepted.dtype), pct_accepted)
+    # The return is needed by the host callback to ensure that the two tics are taken at the right moment.
+    def tic_fn(arr):
+        time_elapsed = time.time() - NOW
+        return np.array(time_elapsed, dtype=arr.dtype), arr
+
+    output_shape = (jax.ShapeDtypeStruct((), burnin_delta.dtype),
+                    jax.ShapeDtypeStruct(burnin_delta.shape, burnin_delta.dtype))
+
+    tic, burnin_delta = call(tic_fn, burnin_delta,
+                             result_shape=output_shape)
+    _, stats, _, out_delta, _, pct_accepted = loop(sample_key, burnin_delta, burnin_state, kernel_fn, None,
+                                                   args.n_samples, verbose)
+
+    output_shape = (jax.ShapeDtypeStruct((), pct_accepted.dtype),
+                    jax.ShapeDtypeStruct(pct_accepted.shape, pct_accepted.dtype))
+
+    toc, _ = call(tic_fn, pct_accepted,
+                  result_shape=output_shape)
+
     return toc - tic, stats, init_xs, ys, pct_accepted, burnin_delta
 
 
 def one_experiment(random_state, exp_key, verbose=args.verbose):
     # DATA
+    # Fix "epoch" to now to avoid floating point issues.
+
     data_key, init_key, burnin_key, sample_key = jax.random.split(exp_key, 4)
     true_xs, ys = get_data(random_state, SIGMA_X, RY, TAU, args.NU, args.D, args.T)
     sampling_time, stats, init_xs, ys, pct_accepted, burnin_delta = _one_experiment(ys, init_key, burnin_key,
@@ -190,24 +208,25 @@ def full_experiment():
     std_traj_per_key = np.ones((args.n_experiments, args.T, args.D ** 2)) * np.nan
     for i in tqdm.trange(args.n_experiments,
                          desc=f"Style: {args.style}, T: {args.T}, N: {args.N}, D: {args.D}, gpu: {args.gpu}, grad: {args.gradient}"):
-        # try:
-        sampling_time, (
-        esjd, traj, squared_exp), true_xs, true_ys, true_init, pct_accepted, burnin_delta = one_experiment(
-            np_random_state,
-            keys[i])
-        traj.block_until_ready()
+        try:
 
-        true_xs_per_key[i, ...] = true_xs
-        ejsd_per_key[i, ...] = esjd
-        acceptance_rate_per_key[i, :] = pct_accepted
-        delta_per_key[i, :] = burnin_delta
-        mean_traj_per_key[i, ...] = traj
-        std_traj_per_key[i, ...] = np.std(squared_exp - traj ** 2)
-        time_per_key[i] = sampling_time
+            sampling_time, (
+                esjd, traj, squared_exp), true_xs, true_ys, true_init, pct_accepted, burnin_delta = one_experiment(
+                np_random_state,
+                keys[i])
+            traj.block_until_ready()
 
-        # except Exception as e:  # noqa
-        #     print(f"Experiment {i} failed for reason {e}")
-        #     continue
+            true_xs_per_key[i, ...] = true_xs
+            ejsd_per_key[i, ...] = esjd
+            acceptance_rate_per_key[i, :] = pct_accepted
+            delta_per_key[i, :] = burnin_delta
+            mean_traj_per_key[i, ...] = traj
+            std_traj_per_key[i, ...] = np.std(squared_exp - traj ** 2)
+            time_per_key[i] = sampling_time
+
+        except Exception as e:  # noqa
+            print(f"Experiment {i} failed for reason {e}")
+            continue
         # try:
         #     start = time.time()
         #     (esjd, *_), _, _, _, pct_accepted, burnin_delta = one_experiment(keys[i])

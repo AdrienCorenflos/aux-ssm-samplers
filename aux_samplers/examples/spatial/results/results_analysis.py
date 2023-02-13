@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
+N_SAMPLES = 20_000
 T = 1_024
 D = 8
 PLOT = True
@@ -61,13 +62,16 @@ plt.show()
 # Plot the EJSD
 plt.figure(figsize=(30, 15))
 
-print(csmc_time.mean(), csmc_grad_time.mean(), kalman_time.mean())
-print(np.median(csmc_grad_esjd, 0), np.median(csmc_esjd, 0), np.mean(kalman_esjd, 0))
+csmc_time_per_iter = csmc_time[..., None, None] / N_SAMPLES
+csmc_grad_time_per_iter = csmc_grad_time[..., None, None] / N_SAMPLES
+kalman_time_per_iter = kalman_time[..., None, None] / N_SAMPLES
+
+print(np.mean(csmc_time_per_iter, 0), np.mean(csmc_grad_time_per_iter, 0), np.mean(kalman_time_per_iter, 0))
 
 
-csmc_esjd_per_time = csmc_esjd ** 0.5 / csmc_time[..., None, None]
-csmc_grad_esjd_per_time = csmc_grad_esjd ** 0.5 / csmc_grad_time[..., None, None]
-kalman_esjd_per_time = kalman_esjd ** 0.5 / kalman_time[..., None, None]
+csmc_esjd_per_time = csmc_esjd ** 0.5 / csmc_time_per_iter
+csmc_grad_esjd_per_time = csmc_grad_esjd ** 0.5 / csmc_grad_time_per_iter
+kalman_esjd_per_time = kalman_esjd ** 0.5 / kalman_time_per_iter
 plt.plot(np.median(csmc_grad_esjd_per_time, 0), label="CSMC Grad", color="tab:blue")
 plt.plot(np.median(csmc_esjd_per_time, 0), label="CSMC", color="tab:orange")
 plt.plot(np.median(kalman_esjd_per_time, 0), label="Kalman", color="tab:green")
