@@ -34,7 +34,7 @@ parser.add_argument('--no-verbose', dest='verbose', action='store_false')
 parser.set_defaults(verbose=True)
 
 # Experiment arguments
-parser.add_argument("--n-experiments", dest="n_experiments", type=int, default=10)
+parser.add_argument("--n-experiments", dest="n_experiments", type=int, default=51)
 parser.add_argument("--T", dest="T", type=int, default=2 ** 10)
 parser.add_argument("--D", dest="D", type=int, default=8)
 parser.add_argument("--NU", dest="NU", type=int, default=1)
