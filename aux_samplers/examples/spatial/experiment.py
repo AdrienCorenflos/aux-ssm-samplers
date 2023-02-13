@@ -157,21 +157,27 @@ def _one_experiment(ys, init_key, burnin_key, sample_key, verbose=args.verbose):
                                                                       args.burnin,
                                                                       verbose)
 
+    def tic_fn(_):
+        import time
+        return time.time()
+
+    tic = jax.pure_callback(tic_fn, jax.ShapeDtypeStruct((), jnp.float_), burnin_avg_acceptance)
     _, stats, _, _, _, pct_accepted = loop(sample_key, burnin_delta, burnin_state, kernel_fn, None, args.n_samples,
                                            verbose)
-    return stats, init_xs, ys, pct_accepted, burnin_delta
+    toc = jax.pure_callback(tic_fn, jax.ShapeDtypeStruct((), jnp.float_), pct_accepted)
+    return toc - tic, stats, init_xs, ys, pct_accepted, burnin_delta
 
 
 def one_experiment(random_state, exp_key, verbose=args.verbose):
     # DATA
     data_key, init_key, burnin_key, sample_key = jax.random.split(exp_key, 4)
     true_xs, ys = get_data(random_state, SIGMA_X, RY, TAU, args.NU, args.D, args.T)
-    stats, init_xs, ys, pct_accepted, burnin_delta = _one_experiment(ys, init_key, burnin_key, sample_key, verbose)
-    return stats, true_xs, ys, init_xs, pct_accepted, burnin_delta
+    sampling_time, stats, init_xs, ys, pct_accepted, burnin_delta = _one_experiment(ys, init_key, burnin_key,
+                                                                                    sample_key, verbose)
+    return sampling_time, stats, true_xs, ys, init_xs, pct_accepted, burnin_delta
 
 
 def full_experiment():
-    import time
     np_random_state = np.random.RandomState(args.seed)
     keys = jax.random.split(jax.random.PRNGKey(args.seed), args.n_experiments)
 
@@ -185,8 +191,8 @@ def full_experiment():
     for i in tqdm.trange(args.n_experiments,
                          desc=f"Style: {args.style}, T: {args.T}, N: {args.N}, D: {args.D}, gpu: {args.gpu}, grad: {args.gradient}"):
         # try:
-        start = time.time()
-        (esjd, traj, squared_exp), true_xs, true_ys, true_init, pct_accepted, burnin_delta = one_experiment(
+        sampling_time, (
+        esjd, traj, squared_exp), true_xs, true_ys, true_init, pct_accepted, burnin_delta = one_experiment(
             np_random_state,
             keys[i])
         traj.block_until_ready()
@@ -197,7 +203,7 @@ def full_experiment():
         delta_per_key[i, :] = burnin_delta
         mean_traj_per_key[i, ...] = traj
         std_traj_per_key[i, ...] = np.std(squared_exp - traj ** 2)
-        time_per_key[i] = time.time() - start
+        time_per_key[i] = sampling_time
 
         # except Exception as e:  # noqa
         #     print(f"Experiment {i} failed for reason {e}")
