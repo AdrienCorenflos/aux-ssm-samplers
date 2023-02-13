@@ -1,4 +1,5 @@
 import argparse
+from functools import partial
 
 import jax
 import jax.numpy as jnp
@@ -34,18 +35,18 @@ parser.set_defaults(verbose=True)
 
 # Experiment arguments
 parser.add_argument("--n-experiments", dest="n_experiments", type=int, default=10)
-parser.add_argument("--T", dest="T", type=int, default=2 ** 9)
-parser.add_argument("--D", dest="D", type=int, default=16)
+parser.add_argument("--T", dest="T", type=int, default=2 ** 10)
+parser.add_argument("--D", dest="D", type=int, default=8)
 parser.add_argument("--NU", dest="NU", type=int, default=1)
 parser.add_argument("--n-samples", dest="n_samples", type=int, default=10_000)
 parser.add_argument("--burnin", dest="burnin", type=int, default=5_000)
 parser.add_argument("--target-alpha", dest="target_alpha", type=float,
-                    default=0.25)
+                    default=0.5)
 parser.add_argument("--lr", dest="lr", type=float, default=0.1)
 parser.add_argument("--beta", dest="beta", type=float, default=0.01)
 parser.add_argument("--delta-init", dest="delta_init", type=float, default=1e-5)
 parser.add_argument("--seed", dest="seed", type=int, default=42)
-parser.add_argument("--style", dest="style", type=str, default="csmc")
+parser.add_argument("--style", dest="style", type=str, default="kalman")
 parser.add_argument("--gradient", action='store_true')
 parser.add_argument('--no-gradient', dest='gradient', action='store_false')
 parser.set_defaults(gradient=False)
@@ -125,6 +126,7 @@ def loop(key, init_delta, init_state, kernel_fn, delta_fn, n_iter, verbose=False
     return out
 
 
+@partial(jax.jit, static_argnums=(4,))
 def _one_experiment(ys, init_key, burnin_key, sample_key, verbose=args.verbose):
     # KERNEL
     if args.style in {"kalman-1", "kalman"}:
