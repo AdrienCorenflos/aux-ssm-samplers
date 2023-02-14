@@ -57,7 +57,7 @@ def _parallel_filtering(m0, P0, ys, Fs, Qs, bs, Hs, Rs, cs):
 
     *_, ell_increments = jax.vmap(sequential_predict_update)(ms[:-1], Ps[:-1], Fs, bs, Qs, y1T, H1T, c1T,
                                                              R1T)
-    ell = ell0 + jnp.sum(ell_increments, 0)
+    ell = ell0 + jnp.nansum(ell_increments, 0)
     return ms, Ps, ell
 
 
@@ -80,22 +80,28 @@ def _sequential_filtering(m0, P0, ys, Fs, Qs, bs, Hs, Rs, cs):
 #                                   y,    m,     P,     H,    c,    R,  ->  m,     P,  ell
 @partial(jnp.vectorize, signature='(dy),(dx),(dx,dx),(dy,dx),(dy),(dy,dy)->(dx),(dx,dx),()')
 def sequential_update(y, m, P, H, c, R):
-    y_hat = H @ m + c
-    y_diff = y - y_hat
-    S = R + H @ P @ H.T
+    def _update(m_, P_):
+        y_hat = H @ m_ + c
+        y_diff = y - y_hat
+        S = R + H @ P_ @ H.T
 
-    if y.shape[-1] == 1:
-        chol_S = S ** 0.5
-        ell_inc = norm.logpdf(y[0], y_hat[0], chol_S[0, 0])
-        G = (P @ H.T) / S
-    else:
-        chol_S = jnp.linalg.cholesky(S)
-        ell_inc = logpdf(y, y_hat, chol_S)
-        G = cho_solve((chol_S, True), H @ P).T
-    m = m + G @ y_diff
-    P = P - G @ S @ G.T
-    P = 0.5 * (P + P.T)
-    return m, P, jnp.nan_to_num(ell_inc)
+        if y.shape[-1] == 1:
+            chol_S = S ** 0.5
+            ell_inc = norm.logpdf(y[0], y_hat[0], chol_S[0, 0])
+            G = (P_ @ H.T) / S
+        else:
+            chol_S = jnp.linalg.cholesky(S)
+            ell_inc = logpdf(y, y_hat, chol_S)
+            G = cho_solve((chol_S, True), H @ P_).T
+        m_ = m_ + G @ y_diff
+        P_ = P_ - G @ S @ G.T
+        P_ = 0.5 * (P_ + P_.T)
+        return m_, P_, jnp.nan_to_num(ell_inc)
+
+    def _passthrough(m_, P_):
+        return m_, P_, 0.
+
+    return jax.lax.cond(~jnp.all(jnp.isfinite(y)), _passthrough, _update, m, P)
 
 
 #                                   m,     P,      F,     b,    Q,  ->  m,    P,
@@ -163,22 +169,34 @@ def _filtering_init(Fs, Qs, bs, Hs, Rs, cs, m0, P0, ys):
 #                                     F,      Q,    b,     H,      R,     c,   y,  m,    P,
 @partial(jnp.vectorize, signature='(dx,dx),(dx,dx),(dx),(dy,dx),(dy,dy),(dy),(dy),(dx),(dx,dx)->' + _elem_signature)
 def _filtering_init_one(F, Q, b, H, R, c, y, m, P):
-    m = F @ m + b
-    P = F @ P @ F.T + Q
 
-    S = H @ P @ H.T + R
-    if y.shape[0] == 1:
-        S_invH_T = H.T / S[0, 0]
-    else:
-        S_invH_T = solve(S, H, assume_a="pos").T
-    K = P @ S_invH_T
-    A = F - K @ H @ F
+    def _update(m_, P_):
 
-    b_std = m + K @ (y - H @ m - c)
-    C = P - K @ S @ K.T
+        m_ = F @ m_ + b
+        P_ = F @ P_ @ F.T + Q
+        S = H @ P_ @ H.T + R
+        if y.shape[0] == 1:
+            S_invH_T = H.T / S[0, 0]
+        else:
+            S_invH_T = solve(S, H, assume_a="pos").T
+        K = P_ @ S_invH_T
+        A = F - K @ H @ F
 
-    temp = F.T @ S_invH_T
-    eta = temp @ (y - H @ b - c)
-    J = temp @ H @ F
+        b_std = m_ + K @ (y - H @ m_ - c)
+        C = P_ - K @ S @ K.T
 
-    return A, b_std, 0.5 * (C + C.T), eta, 0.5 * (J + J.T)
+        temp = F.T @ S_invH_T
+        eta = temp @ (y - H @ b - c)
+        J = temp @ H @ F
+        return A, b_std, 0.5 * (C + C.T), eta, 0.5 * (J + J.T)
+
+    def _passthrough(*_):
+        A = jnp.zeros_like(F)
+        b_std = jnp.zeros_like(b)
+        C = Q
+        eta = jnp.zeros_like(b)
+        J = jnp.zeros_like(F)
+        return A, b_std, C, eta, J
+
+    return jax.lax.cond(~jnp.all(jnp.isfinite(y)), _passthrough, _update, m, P)
+

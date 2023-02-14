@@ -6,7 +6,7 @@ from chex import Numeric
 from jax.scipy.stats import norm
 
 from ..base import Array
-from ..math import logpdf
+from ..math.mvn import logpdf
 
 
 class LGSSM(NamedTuple):

@@ -1,25 +1,13 @@
-for T in 50 200; do
-  for D in 5 30; do
-    for style in kalman-1 kalman-2; do
-      JAX_PLATFORMS=cpu python experiment.py --style $style --T $T --D $D --no-parallel --no-gpu
-    done
-    for N in 25 100; do
-      for style in csmc csmc-guided; do
-        JAX_PLATFORMS=cpu python experiment.py --style $style --N $N --T $T --D $D --no-parallel --no-gpu --gradient
-        JAX_PLATFORMS=cpu python experiment.py --style $style --N $N --T $T --D $D --no-parallel --no-gpu --no-gradient
-      done
-    done
-  done
-done
-wait
 
-for T in 50 200; do
-  for D in 5 30; do
-    JAX_PLATFORMS=cuda CUDA_VISIBLE_DEVICES=0 python experiment.py --style kalman-1 --T $T --D $D --parallel --gpu &
-    JAX_PLATFORMS=cuda CUDA_VISIBLE_DEVICES=1 python experiment.py --style kalman-2 --T $T --D $D --parallel --gpu
-    sleep 5
-    JAX_PLATFORMS=cuda CUDA_VISIBLE_DEVICES=0 python experiment.py --style csmc --N 25 --T $T --D $D --parallel --gpu --gradient &
-    JAX_PLATFORMS=cuda CUDA_VISIBLE_DEVICES=1 python experiment.py --style csmc --N 25 --T $T --D $D --parallel --gpu --no-gradient
-    sleep 5
-  done
-done
+
+JAX_PLATFORMS=cpu python experiment.py --style kalman-1 --T 50 --D 30 --no-parallel --no-gpu --target-alpha 0.5 &
+JAX_PLATFORMS=cpu python experiment.py --style kalman-2 --T 50 --D 30 --no-parallel --no-gpu --target-alpha 0.75
+wait
+JAX_PLATFORMS=cuda CUDA_VISIBLE_DEVICES=0 python experiment.py --style kalman-1 --T 50 --D 30 --parallel --gpu --target-alpha 0.5 &
+JAX_PLATFORMS=cuda CUDA_VISIBLE_DEVICES=0 python experiment.py --style kalman-2 --T 50 --D 30 --parallel --gpu --target-alpha 0.75
+wait
+JAX_PLATFORMS=cuda CUDA_VISIBLE_DEVICES=0 python experiment.py --style csmc --N 500 --T 50 --D 30 --no-parallel --gpu --gradient --target-alpha 0.5 &
+JAX_PLATFORMS=cuda CUDA_VISIBLE_DEVICES=1 python experiment.py --style csmc-guided --N 500 --T 50 --D 30 --no-parallel --gpu --no-gradient --target-alpha 0.5
+wait
+JAX_PLATFORMS=cuda CUDA_VISIBLE_DEVICES=0 python experiment.py --style csmc --N 25 --T 50 --D 30 --parallel --gpu --gradient --target-alpha 0.5
+JAX_PLATFORMS=cuda CUDA_VISIBLE_DEVICES=0 python experiment.py --style csmc --N 25 --T 50 --D 30 --parallel --gpu --no-gradient --target-alpha 0.5

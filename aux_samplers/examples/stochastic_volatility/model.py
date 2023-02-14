@@ -5,6 +5,8 @@ import jax.numpy as jnp
 import numpy as np
 from jax.scipy.stats import norm
 
+from aux_samplers import mvn
+
 
 @partial(jax.jit, static_argnums=(5, 6))
 def get_data(key, nu, phi, tau, rho, dim, T):
@@ -78,3 +80,42 @@ def _log_potential_one(x, y):
 @jax.jit
 def _hess_log_potential_one(x, y):
     return jax.grad(jax.grad(_log_potential_one))(x, y)
+
+
+def init_x_fn(key, ys, nu, phi, tau, rho, N):
+    # run a simple bootstrap filter + backward sampling.
+    T, d = ys.shape
+    m0, P0, F, Q, b = get_dynamics(nu, phi, tau, rho, d)
+    init_key, key = jax.random.split(key)
+    x0 = m0 + jax.random.normal(init_key, (N, d)) @ jnp.linalg.cholesky(P0).T
+    fwd_key, bwd_key = jax.random.split(key)
+    chol_Q = jnp.linalg.cholesky(Q)
+
+    def fwd_body(x, inps):
+        y, op_key = inps
+        op_key_1, op_key_2 = jax.random.split(op_key)
+        log_w = jax.vmap(log_potential, [0, None])(x, y)
+        log_w = log_w - jax.scipy.special.logsumexp(log_w)
+        w = jnp.exp(log_w)
+        # systematic resampling
+        u = jax.random.uniform(op_key_1, shape=())
+        linspace = (u + jnp.arange(N)) / N
+        ancestors = jnp.searchsorted(jnp.cumsum(w, axis=-1), linspace)
+        next_x = b[None, :] + x[ancestors] @ F.T + jax.random.normal(op_key_2, shape=(N, d)) @ chol_Q.T
+        return next_x, (log_w, x)
+
+    _, (log_ws, xs) = jax.lax.scan(fwd_body, x0, (ys, jax.random.split(fwd_key, T)))
+
+    def bwd_body(x, inps):
+        log_w, x_prev, op_key = inps
+        x_pred = b[None, :] + x_prev @ F.T
+        log_w += mvn.logpdf(x, x_pred, chol_Q)
+        w = jnp.exp(log_w - jax.scipy.special.logsumexp(log_w))
+        x = jax.random.choice(op_key, x_prev, shape=(), p=w)
+        return x, x
+
+    bwd_key_init, bwd_key_loop = jax.random.split(bwd_key)
+    x_T = jax.random.choice(bwd_key_init, xs[-1], shape=(), p=jnp.exp(log_ws[-1]))
+    _, xs = jax.lax.scan(bwd_body, x_T, (log_ws[:-1], xs[:-1], jax.random.split(bwd_key_loop, T - 1)), reverse=True)
+    xs = jnp.concatenate([xs, x_T[None, :]], axis=0)
+    return xs

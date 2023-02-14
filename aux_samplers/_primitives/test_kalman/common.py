@@ -56,6 +56,10 @@ def explicit_kalman_filter(ys, m0, P0, Hs, Rs, cs, Fs, Qs, bs):
         P = Fs[t - 1] @ Ps[t - 1] @ Fs[t - 1].T + Qs[t - 1]
 
         # Update
+        if not np.isfinite(ys[t]).all():
+            ms[t] = m
+            Ps[t] = P
+            continue
         S = Hs[t] @ P @ Hs[t].T + Rs[t]
         y_hat = Hs[t] @ m + cs[t]
         ell += mvn.logpdf(ys[t], y_hat, S)

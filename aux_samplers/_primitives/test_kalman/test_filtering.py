@@ -18,11 +18,12 @@ def jax_config():
 
 
 @pytest.mark.parametrize("seed", [0, 1234])
-@pytest.mark.parametrize("T", [3, 5])
+@pytest.mark.parametrize("T", [5, 7])
 @pytest.mark.parametrize("dx", [1, 2])
 @pytest.mark.parametrize("dy", [1, 3])
 @pytest.mark.parametrize("parallel", [True, False])
-def test_parallel_vs_sequential(seed, T, dx, dy, parallel):
+@pytest.mark.parametrize("nan_index", [False, True])
+def test_vs_explicit(seed, T, dx, dy, parallel, nan_index):
     np.random.seed(seed)
 
     m0 = np.random.randn(dx)
@@ -40,6 +41,8 @@ def test_parallel_vs_sequential(seed, T, dx, dy, parallel):
     cs = np.random.randn(T, dy)
 
     ys = np.random.randn(T, dy)
+    if nan_index:
+        ys[3, :] = np.nan
 
     lgssm = LGSSM(m0, P0, Fs, Qs, bs, Hs, Rs, cs)
     ms, Ps, ell = filtering(ys, lgssm, parallel)

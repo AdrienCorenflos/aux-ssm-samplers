@@ -1,2 +1,2 @@
-from .mvn import logpdf, rvs
+from . import mvn
 from .utils import normalize, logsubexp, log1mexp
