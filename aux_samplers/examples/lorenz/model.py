@@ -1,21 +1,29 @@
 from functools import partial
 
+import jax
 import jax.numpy as jnp
 import numpy as np
+from jax.scipy.linalg import solve
 
 _EPS = 1e-8
 
 
+def phi_0(x):
+    x1, x2, x3 = x
+    return jnp.array([0, -x2 - x1 * x3, x1 * x2])
+
+
+def phi(x):
+    x1, x2, x3 = x
+    return jnp.array([x2 - x1, x1, -x3])
+
 def get_dynamics(theta, sigma_x, dt):
     def mean(x, _params):
-        x1, x2, x3 = x
-        z1 = x1 + dt * (theta[0] * (x2 - x1))
-        z2 = x2 + dt * (-theta[1] * x1 - x2 - x1 * x3)
-        z3 = x3 + dt * (x1 * x2 - theta[2] * x3)
-        return jnp.array([z1, z2, z3])
+        return x + dt * phi_0(x) + dt * theta * phi(x)
 
     Q = dt * sigma_x ** 2 * jnp.eye(3)
     return mean, Q
+
 
 
 def observations_model(ys, sig_y, obs_freq, sampling_freq, T):
@@ -34,8 +42,18 @@ def observations_model(ys, sig_y, obs_freq, sampling_freq, T):
     cs = np.zeros_like(ys_extended)
     return ys_extended, Hs, Rs, cs, ts
 
-#
-# data = np.loadtxt("data.csv", delimiter=",", skiprows=1)
-# ys_ex, *_, ts_ex = observations_model(data[:, 1:], 5 ** 0.5, 0.01, 2e-3, 2)
-# print(ys_ex[:50, 0])
-# print(ts_ex[:50])
+
+def theta_posterior_mean_and_chol(x, prior_cov, dt, sigma_x):
+    """Posterior over theta given x and prior covariance."""
+    phis = jax.vmap(phi)(x[:-1])
+    phis_0 = jax.vmap(phi_0)(x[:-1])
+    dx = x[1:] - x[:-1]
+
+    mu = jnp.sum(phis * (dx - dt * phis_0), 0)
+    Gamma = jnp.einsum("ij,ik,jk", phis, phis) / sigma_x ** 2
+    Gamma = Gamma + prior_cov
+    mean = solve(Gamma, mu, assume_a="pos")
+    cov = solve(Gamma, jnp.eye(3), assume_a="pos")
+    chol = jnp.linalg.cholesky(cov)
+    return mean, chol
+
