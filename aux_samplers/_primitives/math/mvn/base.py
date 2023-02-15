@@ -7,9 +7,9 @@ from jax import numpy as jnp
 from jax.scipy.linalg import solve_triangular, eigh
 from jaxtyping import Float, Array
 
-_MIN_LOGPDF = -300
-_MAX_LOGPDF = 300
-
+_MIN_LOGPDF = -1e10
+_MAX_LOGPDF = 1e5
+_INF = 1e100
 
 @partial(jnp.vectorize, signature="(n),(n),(n,n)->()")
 def logpdf(
@@ -44,9 +44,12 @@ def logpdf(
     True
     """
 
-    dim = x.shape[0]
+    # Numerically ignore nans and infs
+    chol_diag = jnp.diag(chol)
+    dim = jnp.sum(jnp.isfinite(chol_diag))
 
-    y = solve_triangular(chol, x - m, lower=True)
+    chol_clip = jnp.nan_to_num(chol, nan=_INF, posinf=_INF, neginf=_INF)
+    y = solve_triangular(chol_clip, x - m, lower=True)
 
     normalizing_constant = tril_log_det(chol) + 0.5 * dim * math.log(2 * math.pi)
     norm_y = jnp.sum(y * y)
@@ -117,4 +120,6 @@ def tril_log_det(chol):
         Log determinant of the matrix.
     """
 
-    return jnp.sum(jnp.log(jnp.abs(jnp.diag(chol))))
+    # Replace nans and infs in the Cholesky decomposition by 1. as they will then be ignored by the log.
+    diag_chol = jnp.nan_to_num(jnp.diag(chol), nan=1., posinf=1., neginf=1.)
+    return jnp.nansum(jnp.log(jnp.abs(diag_chol)))

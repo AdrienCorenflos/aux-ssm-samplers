@@ -13,6 +13,8 @@ from ..base import Array
 from ..math.mvn import logpdf
 
 
+_INF = 1e100
+
 def filtering(ys: Array, lgssm: LGSSM, parallel: bool) -> Tuple[Array, Array, Numeric]:
     """ Kalman filtering algorithm.
     Parameters
@@ -81,19 +83,34 @@ def _sequential_filtering(m0, P0, ys, Fs, Qs, bs, Hs, Rs, cs):
 @partial(jnp.vectorize, signature='(dy),(dx),(dx,dx),(dy,dx),(dy),(dy,dy)->(dx),(dx,dx),()')
 def sequential_update(y, m, P, H, c, R):
     def _update(m_, P_):
-        y_hat = H @ m_ + c
-        y_diff = y - y_hat
-        S = R + H @ P_ @ H.T
+        # When some of the observations are missing, we make the covariance infinite. This is because JAX
+        # does not allow us to remove dimensions from arrays, so we need to keep the same shape.
+        # In practice the difference is negligible as shown in unittests.
 
-        if y.shape[-1] == 1:
+        y_hat = H @ m_ + c
+        y_ = jnp.nan_to_num(y, nan=y_hat)
+        y_diff = y_ - y_hat
+
+        where_nan = ~jnp.isfinite(y)
+        R_ = jnp.where(where_nan[:, None], jnp.inf, R)
+        R_ = jnp.where(where_nan[None, :], jnp.inf, R_)
+
+        S = R_ + H @ P_ @ H.T
+
+        if y_.shape[-1] == 1:
             chol_S = S ** 0.5
-            ell_inc = norm.logpdf(y[0], y_hat[0], chol_S[0, 0])
+            ell_inc = norm.logpdf(y_[0], y_hat[0], chol_S[0, 0])
             G = (P_ @ H.T) / S
         else:
             chol_S = jnp.linalg.cholesky(S)
-            ell_inc = logpdf(y, y_hat, chol_S)
+            ell_inc = logpdf(y_, y_hat, chol_S)
+            chol_S = jnp.nan_to_num(chol_S, nan=_INF, posinf=_INF, neginf=-_INF)
             G = cho_solve((chol_S, True), H @ P_).T
+
         m_ = m_ + G @ y_diff
+
+        # Ignore infinities in S
+        S = jnp.nan_to_num(S, nan=0., posinf=0., neginf=0.)
         P_ = P_ - G @ S @ G.T
         P_ = 0.5 * (P_ + P_.T)
         return m_, P_, jnp.nan_to_num(ell_inc)
@@ -101,7 +118,7 @@ def sequential_update(y, m, P, H, c, R):
     def _passthrough(m_, P_):
         return m_, P_, 0.
 
-    return jax.lax.cond(~jnp.all(jnp.isfinite(y)), _passthrough, _update, m, P)
+    return jax.lax.cond(jnp.any(jnp.isfinite(y)), _update, _passthrough, m, P)
 
 
 #                                   m,     P,      F,     b,    Q,  ->  m,    P,
@@ -171,32 +188,47 @@ def _filtering_init(Fs, Qs, bs, Hs, Rs, cs, m0, P0, ys):
 def _filtering_init_one(F, Q, b, H, R, c, y, m, P):
 
     def _update(m_, P_):
-
         m_ = F @ m_ + b
         P_ = F @ P_ @ F.T + Q
-        S = H @ P_ @ H.T + R
+
+        is_nan = ~jnp.isfinite(y)
+        R_ = jnp.where(is_nan[None, :], jnp.inf, R)
+        R_ = jnp.where(is_nan[:, None], jnp.inf, R_)
+
+        S = H @ P_ @ H.T + R_
         if y.shape[0] == 1:
             S_invH_T = H.T / S[0, 0]
         else:
-            S_invH_T = solve(S, H, assume_a="pos").T
+            # This is needed as JAX doesn't allow us to delete rows/columns from a matrix
+            chol_S_inf = jnp.linalg.cholesky(S)
+            chol_S_inf = jnp.where(jnp.isfinite(chol_S_inf), chol_S_inf, _INF)
+            S_invH_T = cho_solve((chol_S_inf, True), H).T
+
         K = P_ @ S_invH_T
         A = F - K @ H @ F
 
-        b_std = m_ + K @ (y - H @ m_ - c)
-        C = P_ - K @ S @ K.T
+        y_diff_b = jnp.where(is_nan, 0., y - H @ b - c)
+        y_diff_m_ = jnp.where(is_nan, 0., y - H @ m_ - c)
+
+        b_std = m_ + K @ y_diff_m_
+        S_0 = jnp.where(jnp.isfinite(S), S, 0.)
+        C = P_ - K @ S_0 @ K.T
 
         temp = F.T @ S_invH_T
-        eta = temp @ (y - H @ b - c)
+        eta = temp @ y_diff_b
         J = temp @ H @ F
         return A, b_std, 0.5 * (C + C.T), eta, 0.5 * (J + J.T)
 
-    def _passthrough(*_):
-        A = jnp.zeros_like(F)
-        b_std = jnp.zeros_like(b)
-        C = Q
+    def _passthrough(m_, P_):
+        m_ = F @ m_ + b
+        P_ = F @ P_ @ F.T + Q
+
+        A = F
+        b_std = m_
+        C = P_
         eta = jnp.zeros_like(b)
         J = jnp.zeros_like(F)
-        return A, b_std, C, eta, J
+        return A, b_std, 0.5 * (C + C.T), eta, J
 
-    return jax.lax.cond(~jnp.all(jnp.isfinite(y)), _passthrough, _update, m, P)
+    return jax.lax.cond(jnp.any(jnp.isfinite(y)), _update, _passthrough, m, P)
 

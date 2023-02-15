@@ -8,7 +8,7 @@ from chex import ArrayTree, Array
 from jax.scipy.linalg import cho_solve
 
 
-def extended(mean: Callable, cov: Callable, params: Optional[ArrayTree], x_star: Array, _P_star):
+def extended(mean: Callable, cov: Callable, params: Optional[ArrayTree], x_star: Array, _P_star: Optional[Array]):
     """
     First order extended linearisation. TODO: extend to second order.
 
@@ -18,11 +18,11 @@ def extended(mean: Callable, cov: Callable, params: Optional[ArrayTree], x_star:
         Conditional mean E[X | x*], signature (x, params) -> x
     cov: Callable
         Conditional covariance Cov[X | x*], signature (x, params) -> Q
-    params: ArrayTree
+    params: ArrayTree, optional
         Parameters of the conditional mean and covariance functions, can be None
     x_star: Array
         The point at which the linearisation is performed
-    _P_star: Array,
+    _P_star: Array, optional
         This is not used at the moment and is only there for compatibility of the API.
         Ideally, we could implement a second order linearisation.
 

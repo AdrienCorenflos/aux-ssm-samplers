@@ -35,7 +35,7 @@ kalman_delta = kalman["delta_per_key"]
 kalman_rate = kalman["acceptance_rate_per_key"]
 kalman_esjd = kalman["ejsd_per_key"]
 
-# # Plot some trajectories for visual inspection
+# Plot some trajectories for visual inspection
 # ts = np.arange(T)
 # component = np.random.randint(D)
 # rand_key = np.random.randint(10)
@@ -56,6 +56,23 @@ kalman_esjd = kalman["ejsd_per_key"]
 #                  kalman_mean[rand_key, :, D] - 2 * kalman_std[rand_key, :, D],
 #                  kalman_mean[rand_key, :, D] + 2 * kalman_std[rand_key, :, D],
 #                  alpha=0.2, color="tab:green")
+# plt.legend()
+# plt.show()
+
+
+# Plot the EJSD
+plt.figure(figsize=(30, 15))
+
+print(csmc_time.mean(), csmc_grad_time.mean(), kalman_time.mean())
+print(np.median(csmc_grad_esjd, 0), np.median(csmc_esjd, 0), np.mean(kalman_esjd, 0))
+
+
+csmc_esjd_per_time = csmc_esjd ** 0.5 / csmc_time[..., None, None]
+csmc_grad_esjd_per_time = csmc_grad_esjd ** 0.5 / csmc_grad_time[..., None, None]
+kalman_esjd_per_time = kalman_esjd ** 0.5 / kalman_time[..., None, None]
+plt.plot(np.median(csmc_grad_esjd_per_time, 0), label="CSMC Grad", color="tab:blue")
+plt.plot(np.median(csmc_esjd_per_time, 0), label="CSMC", color="tab:orange")
+plt.plot(np.median(kalman_esjd_per_time, 0), label="Kalman", color="tab:green")
 # plt.legend()
 # plt.show()
 
