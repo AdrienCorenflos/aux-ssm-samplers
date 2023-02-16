@@ -1,3 +1,4 @@
+from dataclasses import field
 from functools import partial
 
 import chex
@@ -6,7 +7,7 @@ import jax.numpy as jnp
 from chex import Array
 from jax.scipy.linalg import solve
 from jax.scipy.stats import norm
-from dataclasses import field
+
 from aux_samplers import mvn
 from aux_samplers.csmc import Distribution, UnivariatePotential, Dynamics, Potential, get_generic_kernel
 from auxiliary_csmc import get_feynman_kac
@@ -33,15 +34,22 @@ class AuxiliaryM0(Distribution):
     sqrt_half_delta: float
     y: Array
     grad: bool = False
+    K: Array = field(init=False)
+    chol_Lambda_t: Array = field(init=False)
+
+    def __post_init__(self):
+        self.K = get_K(self.P0, self.sqrt_half_delta)
+        Lambda_t = self.P0 - self.K @ self.P0
+        self.chol_Lambda_t = jnp.linalg.cholesky(0.5 * (Lambda_t + Lambda_t.T))
 
     def sample(self, key, n):
         m0, P0, u = self.m0, self.P0, self.u
         d = m0.shape[0]
         zero_F, zero_b = jnp.zeros((d, d)), jnp.zeros((d,))
-        K = get_K(P0, self.sqrt_half_delta)
-        Lambda_t = P0 - K @ P0
-        Lambda_t = 0.5 * (Lambda_t + Lambda_t.T)
-        mu_t, chol_Lambda_t = get_mu_chol_Lambda_t(zero_b, zero_F, m0, u, self.sqrt_half_delta, self.y, K, Lambda_t, self.grad)
+        mu_t = get_mu(zero_b, zero_F, m0, u, self.sqrt_half_delta, self.y, self.K, self.grad)
+        chol_Lambda_t = jnp.where(jnp.isfinite(self.chol_Lambda_t), self.chol_Lambda_t,
+                                  self.sqrt_half_delta * jnp.eye(d))
+
         out = mu_t[None, ...] + jax.random.normal(key, (n, d)) @ chol_Lambda_t.T
         return out
 
@@ -54,22 +62,22 @@ class AuxiliaryG0(UnivariatePotential):
     sqrt_half_delta: float
     y: Array
     grad: bool = False
+    K: Array = field(init=False)
+    chol_Lambda_t: Array = field(init=False)
 
-    def _get_K(self):
-        P0, sqrt_half_delta = self.P0, self.sqrt_half_delta
-        d = P0.shape[0]
-        return solve((P0 + sqrt_half_delta ** 2 * jnp.eye(d)), P0, assume_a="pos").T
+    def __post_init__(self):
+        self.K = get_K(self.P0, self.sqrt_half_delta)
+        Lambda_t = self.P0 - self.K @ self.P0
+        self.chol_Lambda_t = jnp.linalg.cholesky(0.5 * (Lambda_t + Lambda_t.T))
 
     def __call__(self, x):
         m0, P0, u = self.m0, self.P0, self.u
         d = m0.shape[0]
         zero_F, zero_b = jnp.zeros((d, d)), jnp.zeros((d,))
 
-        K = get_K(P0, self.sqrt_half_delta)
-        Lambda_t = P0 - K @ P0
-        Lambda_t = 0.5 * (Lambda_t + Lambda_t.T)
-
-        mu_t, chol_Lambda_t = get_mu_chol_Lambda_t(zero_b, zero_F, m0, u, self.sqrt_half_delta, self.y, K, Lambda_t, self.grad)
+        mu_t = get_mu(zero_b, zero_F, m0, u, self.sqrt_half_delta, self.y, self.K, self.grad)
+        chol_Lambda_t = jnp.where(jnp.isfinite(self.chol_Lambda_t), self.chol_Lambda_t,
+                                  self.sqrt_half_delta * jnp.eye(d))
 
         out = obs_logpdf(x, self.y)  # g0
         out += mvn.logpdf(x, m0, jnp.linalg.cholesky(P0))  # m0
@@ -84,21 +92,22 @@ class AuxiliaryMt(Dynamics):
     Q: Array = None
     b: Array = None
     grad: bool = False
-    K: Array = field(init=False)
-    Lambda_t: Array = field(init=False)
-
-    def __post_init__(self):
-        self.K = get_K(self.Q, self.sqrt_half_delta)
-        self.Lambda_t = self.Q - self.K @ self.Q
-
 
     def sample(self, key, x_t, params):
         n, d = x_t.shape
 
         F, Q, b = self.F, self.Q, self.b
         u, scale, y = params
-        mu_t, chol_Lambda_t = get_mu_chol_Lambda_t(x_t, F, b, u, scale, y, self.K, self.Lambda_t, self.grad)
 
+        K = get_K(Q, scale)
+        Lambda_t = Q - K @ Q
+        chol_Lambda_t = jnp.linalg.cholesky(0.5 * (Lambda_t + Lambda_t.T))
+
+        mu_t = get_mu(x_t, F, b, u, scale, y, K, self.grad)
+
+        d = b.shape[0]
+        chol_Lambda_t = jnp.where(jnp.isfinite(chol_Lambda_t), chol_Lambda_t,
+                                  scale * jnp.eye(d))
         out = mu_t + jnp.einsum("...ij,...j->...i", chol_Lambda_t, jax.random.normal(key, (n, d)))
         return out
 
@@ -110,17 +119,19 @@ class AuxiliaryGt(Potential):
     b: Array = None
     grad: bool = False
 
-    K: Array = field(init=False)
-    Lambda_t: Array = field(init=False)
-
-    def __post_init__(self):
-        self.K = get_K(self.Q, self.sqrt_half_delta)
-        self.Lambda_t = self.Q - self.K @ self.Q
-
     def __call__(self, x_t_p_1, x_t, params):
         F, Q, b = self.F, self.Q, self.b
         u, scale, y = params
-        mu_t, chol_Lambda_t = get_mu_chol_Lambda_t(x_t, F, b, u, scale, y,  self.K, self.Lambda_t, self.grad)
+
+        K = get_K(Q, scale)
+        Lambda_t = Q - K @ Q
+        chol_Lambda_t = jnp.linalg.cholesky(0.5 * (Lambda_t + Lambda_t.T))
+
+        mu_t = get_mu(x_t, F, b, u, scale, y, K, self.grad)
+
+        d = b.shape[0]
+        chol_Lambda_t = jnp.where(jnp.isfinite(chol_Lambda_t), chol_Lambda_t,
+                                  scale * jnp.eye(d))
 
         out = obs_logpdf(x_t_p_1, y)  # gt
         out += trans_logpdf(x_t_p_1, x_t, F, Q, b)
@@ -134,30 +145,15 @@ def get_K(Q, scale):
     return solve((Q + scale ** 2 * jnp.eye(d)), Q, assume_a="pos").T
 
 
-@partial(jnp.vectorize, signature="(d),(d,d),(d,d),(d),(d),(),(d)->(d),(d,d)", excluded=(7,))
-def get_mu_chol_Lambda_t(x, F, b, u, scale, y, K, Lambda_t, grad):
-    d = x.shape[0]
-
+@partial(jnp.vectorize, signature="(d),(d,d),(d),(d),(),(d),(d,d)->(d)", excluded=(7,))
+def get_mu(x, F, b, u, scale, y, K, grad):
     x_pred = F @ x + b
-
-
     if grad:
         grad_val = jax.grad(obs_logpdf)(u, y)
         u += scale ** 2 * grad_val
 
     mu_t = x_pred + K @ (u - x_pred)
-    chol_Lambda_t = jnp.linalg.cholesky(Lambda_t)
-
-    # another option is to use a linearisation of the locally optimal proposal.
-    # if grad:
-    #     temp = 0.5 * (jnp.exp(-mu_t) * y ** 2 - 2)
-    #     mu_t += Lambda_t @ temp
-
-    # When scale is too small, the covariance matrix Lambda_t can numerically be singular.
-    chol_Lambda_t = jnp.where(jnp.isfinite(chol_Lambda_t), chol_Lambda_t,
-                              scale * jnp.eye(d))
-
-    return mu_t, chol_Lambda_t
+    return mu_t
 
 
 @partial(jnp.vectorize, signature="(d),(d)->()")

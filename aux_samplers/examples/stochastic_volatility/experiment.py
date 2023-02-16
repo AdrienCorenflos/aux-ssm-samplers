@@ -42,7 +42,7 @@ parser.add_argument("--burnin", dest="burnin", type=int, default=2_500)
 parser.add_argument("--target-alpha", dest="target_alpha", type=float, default=0.75)
 parser.add_argument("--lr", dest="lr", type=float, default=0.1)
 parser.add_argument("--beta", dest="beta", type=float, default=0.01)
-parser.add_argument("--delta-init", dest="delta_init", type=float, default=1e-5)
+parser.add_argument("--delta-init", dest="delta_init", type=float, default=1e-7)
 parser.add_argument("--seed", dest="seed", type=int, default=1234)
 parser.add_argument("--style", dest="style", type=str, default="kalman-2")
 parser.add_argument("--gradient", action='store_true')
@@ -73,7 +73,7 @@ m0, P0, F, Q, b = get_dynamics(NU, PHI, TAU, RHO, args.D)
 # STATS FN
 def stats_fn(x_1, x_2):
     # squared jumping distance averaged across dimensions, and first and second moments
-    return (x_2 - x_1) ** 2, x_2, x_2 ** 2
+    return jnp.sum((x_2 - x_1) ** 2, -1), x_2, x_2 ** 2
 
 
 # KERNEL
@@ -127,7 +127,7 @@ def one_experiment(exp_key, verbose=args.verbose):
     true_xs, ys = get_data(data_key, NU, PHI, TAU, RHO, args.D, args.T)
 
     # INIT
-    xs_init = init_x_fn(init_key, ys, NU, PHI, TAU, RHO, 1_000)
+    xs_init = init_x_fn(init_key, ys, NU, PHI, TAU, RHO, 10_000)
 
     # KERNEL
     if args.style == "kalman-1":
