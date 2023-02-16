@@ -73,7 +73,7 @@ m0, P0, F, Q, b = get_dynamics(NU, PHI, TAU, RHO, args.D)
 # STATS FN
 def stats_fn(x_1, x_2):
     # squared jumping distance averaged across dimensions, and first and second moments
-    return jnp.sum((x_2 - x_1) ** 2, -1), x_2, x_2 ** 2
+    return (x_2 - x_1) ** 2, x_2, x_2 ** 2
 
 
 # KERNEL
