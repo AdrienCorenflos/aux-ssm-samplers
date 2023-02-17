@@ -1,15 +1,22 @@
+# This specific script failed randomly with some XLA/CUDA errors at start-up for my computer.
+# If you want to run it, you may have to just try again a few times. I am not sure what is causing this. It may just be
+# a problem with my computer. Will try on another one soon.
+# I am typically getting one of these errors:
+# - jaxlib.xla_extension.XlaRuntimeError: INTERNAL: cuSolver internal error
+# - jaxlib.xla_extension.XlaRuntimeError: INTERNAL: Failed to execute XLA Runtime executable: run time error: custom call 'xla.gpu.custom_call' failed: jaxlib/gpu/prng_kernels.cc:33: operation gpuGetLastError() failed: out of memory.
+
 import argparse
 import time
 
 import jax
 import jax.numpy as jnp
 import numpy as np
-import tqdm.auto as tqdm
 from jax.tree_util import tree_map
 
 from aux_samplers.common import delta_adaptation
 from auxiliary_kalman import get_kernel as get_kalman_kernel
-from model import get_dynamics, init_x_fn, observations_model
+from model import init_x_fn, observations_model
+
 
 # ARGS PARSING
 
@@ -33,9 +40,9 @@ parser.set_defaults(verbose=True)
 
 # Experiment arguments
 parser.add_argument("--n-samples", dest="n_samples", type=int, default=10_000)
-parser.add_argument("--burnin", dest="burnin", type=int, default=2_500)
-parser.add_argument("--target-alpha", dest="target_alpha", type=float, default=0.5)
-parser.add_argument("--lr", dest="lr", type=float, default=0.1)
+parser.add_argument("--burnin", dest="burnin", type=int, default=5_000)
+parser.add_argument("--target-alpha", dest="target_alpha", type=float, default=0.4)
+parser.add_argument("--lr", dest="lr", type=float, default=0.25)
 parser.add_argument("--beta", dest="beta", type=float, default=0.01)
 parser.add_argument("--delta-init", dest="delta_init", type=float, default=1e-5)
 parser.add_argument("--seed", dest="seed", type=int, default=1234)
@@ -53,7 +60,7 @@ args = parser.parse_args()
 # BACKEND CONFIG
 NOW = time.time()
 
-jax.config.update("jax_enable_x64", True)
+jax.config.update("jax_enable_x64", False)
 if not args.gpu:
     jax.config.update("jax_platform_name", "cpu")
 else:
@@ -86,7 +93,7 @@ def stats_fn(x_1, x_2):
 
 
 # KERNEL
-def loop(key, init_delta, init_state, kernel_fn, delta_fn, n_iter, verbose=False):
+def loop(key, init_delta, init_state, kernel_fn, delta_fn, n_iter, verbose=False, return_samples=False):
     from datetime import datetime
     keys = jax.random.split(key, n_iter)
 
@@ -120,13 +127,15 @@ def loop(key, init_delta, init_state, kernel_fn, delta_fn, n_iter, verbose=False
             delta = delta_fn(delta, args.target_alpha, window_avg_acceptance, lr)
 
         carry = i + 1, stats, next_state, delta, window_avg_acceptance, avg_acceptance
+        if return_samples:
+            return carry, next_state.x[::SAMPLE_EVERY]
         return carry, None
 
     init_stats = stats_fn(init_state.x, init_state.x)
     init = 0, init_stats, init_state, init_delta, 1. * init_state.updated, 1. * init_state.updated
 
-    out, _ = jax.lax.scan(body_fn, init, keys)
-    return out
+    out, xs = jax.lax.scan(body_fn, init, keys)
+    return out, xs
 
 
 @jax.jit
@@ -156,13 +165,13 @@ def one_experiment(exp_key, verbose=args.verbose):
     init_state = init_fn(xs_init)
 
     # BURNIN
-    _, _, burnin_state, burnin_delta, burnin_avg_acceptance, _ = loop(burnin_key,
-                                                                      delta_init,
-                                                                      init_state,
-                                                                      kernel_fn,
-                                                                      delta_adaptation,
-                                                                      args.burnin,
-                                                                      verbose)
+    (_, _, burnin_state, burnin_delta, burnin_avg_acceptance, _), _ = loop(burnin_key,
+                                                                           delta_init,
+                                                                           init_state,
+                                                                           kernel_fn,
+                                                                           delta_adaptation,
+                                                                           args.burnin,
+                                                                           verbose)
     from jax.experimental.host_callback import call
 
     def tic_fn(arr):
@@ -174,33 +183,45 @@ def one_experiment(exp_key, verbose=args.verbose):
 
     tic, burnin_delta = call(tic_fn, burnin_delta,
                              result_shape=output_shape)
-    _, stats, _, out_delta, _, pct_accepted = loop(sample_key, burnin_delta, burnin_state, kernel_fn, None,
-                                                   args.n_samples, verbose)
+    (_, stats, _, out_delta, _, pct_accepted), samples = loop(sample_key, burnin_delta, burnin_state, kernel_fn, None,
+                                                              args.n_samples, verbose, True)
 
     output_shape = (jax.ShapeDtypeStruct((), pct_accepted.dtype),
                     jax.ShapeDtypeStruct(pct_accepted.shape, pct_accepted.dtype))
 
     toc, _ = call(tic_fn, pct_accepted,
                   result_shape=output_shape)
-    return toc - tic, stats, xs_init, pct_accepted, burnin_delta
+    return toc - tic, stats, xs_init, pct_accepted, burnin_delta, samples
 
 
 def full_experiment():
     key = jax.random.PRNGKey(args.seed)
 
-    time_taken, (esjd, traj, squared_exp), xs_init, pct_accepted, burnin_delta = one_experiment(key)
+    time_taken, (esjd, traj, squared_exp), xs_init, pct_accepted, burnin_delta, samples = one_experiment(key)
 
     from matplotlib import pyplot as plt
+    from mpl_toolkits.mplot3d.art3d import Line3DCollection
+    for rot in range(0, 360, 5):
+        fig = plt.figure()
+        fig.suptitle(f"Rot: {rot}")
+        ax = plt.axes(projection='3d')
+        ax.set_box_aspect(aspect=(1, 1, 1))
 
-    ax = plt.axes(projection='3d')
-    ax.set_box_aspect(aspect=(4, 1, 1))
-    ax.plot(np.linspace(0, args.T, N_STEPS), traj[..., 1], traj[..., 2], color="tab:orange")
-    plt.show()
-
-    ax = plt.axes(projection='3d')
-    ax.set_box_aspect(aspect=(1, 1, 1))
-    ax.plot(traj[:, 0], traj[:, 1], traj[:, 2])
-    plt.show()
+        for sample in samples[::25]:
+            sample = sample.reshape(-1, 1, 3)
+            segments = np.concatenate([sample[:-1], sample[1:]], axis=1)
+            lc = Line3DCollection(segments, cmap=plt.get_cmap('winter'))
+            lc.set_array(DATA[:, 0] / T)
+            lc.set_alpha(0.25)
+            ax.add_collection3d(lc)
+        ax.set_xlim(samples[..., 0].min(), samples[..., 0].max())
+        ax.set_ylim(samples[..., 1].min(), samples[..., 1].max())
+        ax.set_zlim(samples[..., 2].min(), samples[..., 2].max())
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        ax.view_init(45, rot)
+        plt.show()
 
     return ejsd_per_key, acceptance_rate_per_key, delta_per_key, time_per_key
 
