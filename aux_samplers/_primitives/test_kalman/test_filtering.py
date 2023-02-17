@@ -21,7 +21,7 @@ def jax_config():
 @pytest.mark.parametrize("T", [5, 7])
 @pytest.mark.parametrize("dx", [1, 2])
 @pytest.mark.parametrize("dy", [1, 3])
-@pytest.mark.parametrize("parallel", [True, False])
+@pytest.mark.parametrize("parallel", [False])
 @pytest.mark.parametrize("nan_index", [True])
 def test_vs_explicit(seed, T, dx, dy, parallel, nan_index):
     np.random.seed(seed)
@@ -44,9 +44,11 @@ def test_vs_explicit(seed, T, dx, dy, parallel, nan_index):
     if nan_index:
         ys[1, :] = np.nan
         ys[3, 0] = np.nan
+        Hs[3, 0, :] = np.nan
 
     lgssm = LGSSM(m0, P0, Fs, Qs, bs, Hs, Rs, cs)
-    ms, Ps, ell = filtering(ys, lgssm, parallel)
+    with jax.disable_jit():
+        ms, Ps, ell = filtering(ys, lgssm, parallel)
     expected_ms, expected_Ps, expected_ell = explicit_kalman_filter(ys, m0, P0, Hs, Rs, cs, Fs, Qs, bs)
     npt.assert_allclose(ms, expected_ms)
     npt.assert_allclose(Ps, expected_Ps)

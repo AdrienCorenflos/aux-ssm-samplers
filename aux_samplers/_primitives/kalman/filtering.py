@@ -12,8 +12,8 @@ from .base import LGSSM
 from ..base import Array
 from ..math.mvn import logpdf
 
-
 _INF = 1e100
+
 
 def filtering(ys: Array, lgssm: LGSSM, parallel: bool) -> Tuple[Array, Array, Numeric]:
     """ Kalman filtering algorithm.
@@ -86,26 +86,34 @@ def sequential_update(y, m, P, H, c, R):
         # When some of the observations are missing, we make the covariance infinite. This is because JAX
         # does not allow us to remove dimensions from arrays, so we need to keep the same shape.
         # In practice the difference is negligible as shown in unittests.
+        dy = y.shape[0]
+        where_nan = ~jnp.isfinite(y)
+        diag_R = jnp.diag(R)
+        diag_R = jnp.where(where_nan, jnp.inf, diag_R)
+        R_ = jnp.where(where_nan[None, :], 0., R)
+        R_ = jnp.where(where_nan[:, None], 0., R_)
+        R_ = R_.at[jnp.diag_indices(dy)].set(diag_R)
 
-        y_hat = H @ m_ + c
+        # R_ = jnp.where(where_nan[None, :], jnp.inf, R_)
+
+        H_ = jnp.where(where_nan[:, None], 0., H)
+        c_ = jnp.where(where_nan, 0., c)
+
+        y_hat = H_ @ m_ + c_
         y_ = jnp.nan_to_num(y, nan=y_hat)
         y_diff = y_ - y_hat
 
-        where_nan = ~jnp.isfinite(y)
-        R_ = jnp.where(where_nan[:, None], jnp.inf, R)
-        R_ = jnp.where(where_nan[None, :], jnp.inf, R_)
-
-        S = R_ + H @ P_ @ H.T
+        S = R_ + H_ @ P_ @ H_.T
 
         if y_.shape[-1] == 1:
             chol_S = S ** 0.5
             ell_inc = norm.logpdf(y_[0], y_hat[0], chol_S[0, 0])
-            G = (P_ @ H.T) / S
+            G = (P_ @ H_.T) / S
         else:
             chol_S = jnp.linalg.cholesky(S)
             ell_inc = logpdf(y_, y_hat, chol_S)
             chol_S = jnp.nan_to_num(chol_S, nan=_INF, posinf=_INF, neginf=-_INF)
-            G = cho_solve((chol_S, True), H @ P_).T
+            G = cho_solve((chol_S, True), H_ @ P_).T
 
         m_ = m_ + G @ y_diff
 
@@ -186,29 +194,36 @@ def _filtering_init(Fs, Qs, bs, Hs, Rs, cs, m0, P0, ys):
 #                                     F,      Q,    b,     H,      R,     c,   y,  m,    P,
 @partial(jnp.vectorize, signature='(dx,dx),(dx,dx),(dx),(dy,dx),(dy,dy),(dy),(dy),(dx),(dx,dx)->' + _elem_signature)
 def _filtering_init_one(F, Q, b, H, R, c, y, m, P):
+    dy = y.shape[0]
 
     def _update(m_, P_):
         m_ = F @ m_ + b
         P_ = F @ P_ @ F.T + Q
 
-        is_nan = ~jnp.isfinite(y)
-        R_ = jnp.where(is_nan[None, :], jnp.inf, R)
-        R_ = jnp.where(is_nan[:, None], jnp.inf, R_)
+        where_nan = ~jnp.isfinite(y)
+        diag_R = jnp.diag(R)
+        diag_R = jnp.where(where_nan, jnp.inf, diag_R)
+        R_ = jnp.where(where_nan[None, :], 0., R)
+        R_ = jnp.where(where_nan[:, None], 0., R_)
+        R_ = R_.at[jnp.diag_indices(dy)].set(diag_R)
 
-        S = H @ P_ @ H.T + R_
+        H_ = jnp.where(where_nan[:, None], 0., H)
+        c_ = jnp.where(where_nan, 0., c)
+
+        S = H_ @ P_ @ H_.T + R_
         if y.shape[0] == 1:
-            S_invH_T = H.T / S[0, 0]
+            S_invH_T = H_.T / S[0, 0]
         else:
             # This is needed as JAX doesn't allow us to delete rows/columns from a matrix
             chol_S_inf = jnp.linalg.cholesky(S)
             chol_S_inf = jnp.where(jnp.isfinite(chol_S_inf), chol_S_inf, _INF)
-            S_invH_T = cho_solve((chol_S_inf, True), H).T
+            S_invH_T = cho_solve((chol_S_inf, True), H_).T
 
         K = P_ @ S_invH_T
-        A = F - K @ H @ F
+        A = F - K @ H_ @ F
 
-        y_diff_b = jnp.where(is_nan, 0., y - H @ b - c)
-        y_diff_m_ = jnp.where(is_nan, 0., y - H @ m_ - c)
+        y_diff_b = jnp.where(where_nan, 0., y - H_ @ b - c_)
+        y_diff_m_ = jnp.where(where_nan, 0., y - H_ @ m_ - c_)
 
         b_std = m_ + K @ y_diff_m_
         S_0 = jnp.where(jnp.isfinite(S), S, 0.)
@@ -216,7 +231,7 @@ def _filtering_init_one(F, Q, b, H, R, c, y, m, P):
 
         temp = F.T @ S_invH_T
         eta = temp @ y_diff_b
-        J = temp @ H @ F
+        J = temp @ H_ @ F
         return A, b_std, 0.5 * (C + C.T), eta, 0.5 * (J + J.T)
 
     def _passthrough(m_, P_):
@@ -231,4 +246,3 @@ def _filtering_init_one(F, Q, b, H, R, c, y, m, P):
         return A, b_std, 0.5 * (C + C.T), eta, J
 
     return jax.lax.cond(jnp.any(jnp.isfinite(y)), _update, _passthrough, m, P)
-
