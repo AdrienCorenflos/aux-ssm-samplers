@@ -31,7 +31,7 @@ def observations_model(data, sig_y, n_steps, sample_every):
     ys_extended = np.ones((n_steps, 2)) * np.nan
     ys_extended[::sample_every] = ys
 
-    H = np.array([[1, 0, 0], [0, 1, 0]], dtype=float)
+    H = np.array([[0, 1, 0], [0, 0, 1]], dtype=float)
     Hs = np.ones((*ys_extended.shape, 3)) * np.nan
     Hs[::sample_every, ...] = H
 
@@ -47,12 +47,12 @@ def theta_posterior_mean_and_chol(x, prior_cov, dt, sigma_x):
     phis = jax.vmap(phi)(x[:-1])
     phis_0 = jax.vmap(phi_0)(x[:-1])
     dx = x[1:] - x[:-1]
+    mu = jnp.sum(phis * (dx - dt * phis_0), 0) / sigma_x ** 2
+    Gamma = dt * jnp.einsum("ij,ik->jk", phis, phis) / sigma_x ** 2
 
-    mu = jnp.sum(phis * (dx - dt * phis_0), 0)
-    Gamma = jnp.einsum("ij,ik,jk", phis, phis) / sigma_x ** 2
-    Gamma = Gamma + prior_cov
-    mean = solve(Gamma, mu, assume_a="pos")
-    cov = solve(Gamma, jnp.eye(3), assume_a="pos")
+    Gamma = Gamma + jnp.linalg.inv(prior_cov)
+    cov = jnp.linalg.inv(Gamma)
+    mean = cov @ mu
     chol = jnp.linalg.cholesky(cov)
     return mean, chol
 
