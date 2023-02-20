@@ -11,6 +11,7 @@ _MIN_LOGPDF = -1e10
 _MAX_LOGPDF = 1e5
 _INF = 1e100
 
+
 @partial(jnp.vectorize, signature="(n),(n),(n,n)->()")
 def logpdf(
         x: Float[Array, "dim"], m: Float[Array, "dim"], chol: Float[Array, "dim dim"]

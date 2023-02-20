@@ -84,7 +84,7 @@ def systematic(key: PRNGKey, weights: Float[Array, "dim_x"], N: Optional[int] = 
     zero_loc = jnp.flatnonzero(idx == 0, size=N, fill_value=-1)
     roll_idx = jnp.floor(n_zero * W).astype(int)
 
-    idx = jax.lax.select(n_zero == 1, idx,  jnp.roll(idx, -zero_loc[roll_idx]))
+    idx = jax.lax.select(n_zero == 1, idx, jnp.roll(idx, -zero_loc[roll_idx]))
     return jnp.clip(idx, 0, M - 1)
 
 

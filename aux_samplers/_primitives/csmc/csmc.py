@@ -9,7 +9,7 @@ import jax
 from jax import numpy as jnp, tree_map
 
 from .base import Distribution, UnivariatePotential, Dynamics, Potential, CSMCState
-from .resamplings import systematic, multinomial
+from .resamplings import multinomial
 from ..math.utils import normalize
 
 

@@ -56,7 +56,6 @@ parser.add_argument("--N", dest="N", type=int, default=10)
 parser.add_argument("--K", dest="K", type=int, default=10)
 parser.add_argument("--M", dest="M", type=int, default=100)
 
-
 args = parser.parse_args()
 
 # BACKEND CONFIG
@@ -217,7 +216,8 @@ def full_experiment():
         ax.semilogy(np.arange(args.T), esjd, color="tab:blue", label="EJSD")
         twinx = ax.twinx()
         if "kalman" in args.style:
-            twinx.plot(np.arange(args.T), pct_accepted * np.ones((args.T,)), color="tab:orange", label="acceptance rate")
+            twinx.plot(np.arange(args.T), pct_accepted * np.ones((args.T,)), color="tab:orange",
+                       label="acceptance rate")
         else:
             twinx.plot(np.arange(args.T), pct_accepted, color="tab:orange", label="acceptance rate")
         twinx.set_ylim(0, 1)

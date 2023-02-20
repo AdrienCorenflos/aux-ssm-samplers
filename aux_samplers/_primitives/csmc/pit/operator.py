@@ -30,7 +30,7 @@ from chex import ArrayTree
 from jax import tree_map, vmap
 from jax.scipy.special import logsumexp
 
-from ..resamplings import systematic, coupled_multinomial, multinomial
+from ..resamplings import coupled_multinomial, multinomial
 from ...math.couplings import index_max_coupling
 
 STATE = Any

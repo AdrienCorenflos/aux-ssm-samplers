@@ -233,7 +233,6 @@ def divide_and_conquer(key: PRNGKey, lgssm_1: LGSSM, lgssm_2: LGSSM, ms_1, Ps_1,
     m0_1 = jnp.einsum("...ij,...j->...i", E_0T_1[0], xT_1) + g_0T_1[0]
     m0_2 = jnp.einsum("...ij,...j->...i", E_0T_2[0], xT_2) + g_0T_2[0]
 
-
     if L_0T_1.shape[-1] == 1:
         chol_L_0T_1_0 = jnp.sqrt(L_0T_1[0])
         chol_L_0T_2_0 = jnp.sqrt(L_0T_2[0])

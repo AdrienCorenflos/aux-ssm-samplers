@@ -1,6 +1,5 @@
 import matplotlib.pyplot as plt
 import numpy as np
-import tikzplotlib
 import pandas as pd
 
 N_SAMPLES = 20_000
@@ -65,7 +64,6 @@ plt.figure(figsize=(30, 15))
 
 print(csmc_time.mean(), csmc_grad_time.mean(), kalman_time.mean())
 print(np.median(csmc_grad_esjd, 0), np.median(csmc_esjd, 0), np.mean(kalman_esjd, 0))
-
 
 # Plot the EJSD
 

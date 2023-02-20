@@ -3,7 +3,7 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 from chex import Array, ArrayTree, PRNGKey
-from jax.experimental.sparse import BCOO, bcoo_dot_general, COO, coo_matmat
+from jax.experimental.sparse import BCOO
 from jax.scipy.linalg import solve_triangular, cholesky
 
 

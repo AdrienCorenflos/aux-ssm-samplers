@@ -32,6 +32,7 @@ parser.set_defaults(gpu=True)
 parser.add_argument('--verbose', action='store_true')
 parser.add_argument('--no-verbose', dest='verbose', action='store_false')
 parser.set_defaults(verbose=True)
+parser.add_argument("--precision", dest="precision", type=str, default="single")
 
 # Experiment arguments
 parser.add_argument("--n-experiments", dest="n_experiments", type=int, default=10)
@@ -42,7 +43,7 @@ parser.add_argument("--burnin", dest="burnin", type=int, default=2_500)
 parser.add_argument("--target-alpha", dest="target_alpha", type=float, default=0.75)
 parser.add_argument("--lr", dest="lr", type=float, default=0.1)
 parser.add_argument("--beta", dest="beta", type=float, default=0.01)
-parser.add_argument("--delta-init", dest="delta_init", type=float, default=1e-7)
+parser.add_argument("--delta-init", dest="delta_init", type=float, default=1e-8)
 parser.add_argument("--seed", dest="seed", type=int, default=1234)
 parser.add_argument("--style", dest="style", type=str, default="kalman-2")
 parser.add_argument("--gradient", action='store_true')
@@ -58,7 +59,14 @@ args = parser.parse_args()
 # BACKEND CONFIG
 NOW = time.time()
 
-jax.config.update("jax_enable_x64", False)
+if args.precision.lower() in {"single", "float32", "32"}:
+    jax.config.update("jax_enable_x64", False)
+elif args.precision.lower() in {"double", "float64", "64"}:
+    jax.config.update("jax_enable_x64", True)
+else:
+    raise ValueError(
+        f"Unknown precision {args.precision}, note that jax doesn't support half precision. Stick to single or double.")
+
 if not args.gpu:
     jax.config.update("jax_platform_name", "cpu")
 else:
@@ -95,7 +103,7 @@ def loop(key, init_delta, init_state, kernel_fn, delta_fn, n_iter, verbose=False
                                 jnp.min(delta), jnp.max(delta),
                                 jnp.min(window_avg_acceptance), jnp.max(window_avg_acceptance),
                                 jnp.min(avg_acceptance), jnp.max(avg_acceptance),
-                                jnp.min(stats[0]), jnp.max(stats[0]),
+                                jnp.min(jnp.sum(stats[0], -1)), jnp.max(jnp.sum(stats[0], -1)),
                                 ), result=None)
 
         next_state = kernel_fn(key_inp, state, delta)
@@ -207,20 +215,20 @@ def full_experiment():
         #     time_per_key[i] = time.time() - start
         # except:  # noqa
         #     continue
-        from matplotlib import pyplot as plt
-        fig, ax = plt.subplots(figsize=(15, 5))
-
-        ax.plot(np.arange(args.T), traj[..., -1], color="tab:orange")
-        std = np.sqrt(squared_exp[..., -1] - traj[..., -1] ** 2)
-        ax.fill_between(np.arange(args.T), traj[..., -1] + 2 * std, traj[..., -1] - 2 * std,
-                        color="tab:orange", alpha=0.2)
-        ax.plot(np.arange(args.T), true_xs[:, -1], color="tab:blue")
-        ax.plot(np.arange(args.T), xs_init[:, -1], color="k", linestyle="--")
-        plt.show()
-
-        fig, ax = plt.subplots(figsize=(15, 5))
-        ax.plot(np.arange(args.T), esjd, color="tab:orange")
-        plt.show()
+        # from matplotlib import pyplot as plt
+        # fig, ax = plt.subplots(figsize=(15, 5))
+        #
+        # ax.plot(np.arange(args.T), traj[..., -1], color="tab:orange")
+        # std = np.sqrt(squared_exp[..., -1] - traj[..., -1] ** 2)
+        # ax.fill_between(np.arange(args.T), traj[..., -1] + 2 * std, traj[..., -1] - 2 * std,
+        #                 color="tab:orange", alpha=0.2)
+        # ax.plot(np.arange(args.T), true_xs[:, -1], color="tab:blue")
+        # ax.plot(np.arange(args.T), xs_init[:, -1], color="k", linestyle="--")
+        # plt.show()
+        #
+        # fig, ax = plt.subplots(figsize=(15, 5))
+        # ax.plot(np.arange(args.T), esjd, color="tab:orange")
+        # plt.show()
 
     return ejsd_per_key, acceptance_rate_per_key, delta_per_key, time_per_key
 

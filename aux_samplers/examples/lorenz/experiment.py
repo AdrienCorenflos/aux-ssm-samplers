@@ -17,7 +17,6 @@ import numpy as np
 from chex import dataclass
 from jax.tree_util import tree_map
 
-from aux_samplers import SamplerState
 from aux_samplers.common import delta_adaptation
 from aux_samplers.kalman.generic import KalmanSampler
 from auxiliary_kalman import get_kernel as get_kalman_kernel
@@ -46,19 +45,16 @@ parser.set_defaults(verbose=True)
 # Experiment arguments
 parser.add_argument("--n-samples", dest="n_samples", type=int, default=10_000)
 parser.add_argument("--burnin", dest="burnin", type=int, default=2_500)
-parser.add_argument("--target-alpha", dest="target_alpha", type=float, default=0.234)
-parser.add_argument("--lr", dest="lr", type=float, default=0.5)
-parser.add_argument("--beta", dest="beta", type=float, default=0.05)
+parser.add_argument("--target-alpha-1", dest="target_alpha_1", type=float, default=0.234)
+parser.add_argument("--target-alpha-2", dest="target_alpha_2", type=float, default=0.5)
+parser.add_argument("--lr-1", dest="lr_1", type=float, default=1.)
+parser.add_argument("--lr-2", dest="lr_2", type=float, default=0.05)
+parser.add_argument("--beta", dest="beta", type=float, default=0.01)
 parser.add_argument("--delta-init", dest="delta_init", type=float, default=1e-5)
-parser.add_argument("--seed", dest="seed", type=int, default=1234)
+parser.add_argument("--min-delta", dest="min_delta", type=float, default=1e-15)
+parser.add_argument("--max-delta", dest="max_delta", type=float, default=1e0)
+parser.add_argument("--seed", dest="seed", type=int, default=42)
 parser.add_argument("--style", dest="style", type=str, default="kalman")
-parser.add_argument("--gradient", action='store_true')
-parser.add_argument('--no-gradient', dest='gradient', action='store_false')
-parser.set_defaults(gradient=True)
-parser.add_argument("--backward", action='store_true')
-parser.add_argument('--no-backward', dest='backward', action='store_false')
-parser.set_defaults(backward=True)
-parser.add_argument("--N", dest="N", type=int, default=25)
 
 args = parser.parse_args()
 
@@ -75,11 +71,12 @@ else:
 # we use the exact same parameters as Mider et al.
 theta_prior_cov = 1e3 * jnp.eye(3)
 true_theta = jnp.array([10., 28., 8. / 3.])
-true_xs = np.loadtxt("true_xs.csv", delimiter=",", skiprows=1)
+true_xs = np.loadtxt("true_xs.csv", delimiter=",", skiprows=1)[:, 1:]
+
 M0 = jnp.array([1.5, -1.5, 25.])
 P0 = jnp.diag(jnp.array([400., 20., 20.]))
 SIGMA_X = 3.
-SIGMA_Y = 5 ** 0.5
+SIGMA_Y = 5. ** 0.5
 THETA_0 = jnp.array([5.0, 15.0, 6.0])
 DATA = np.loadtxt("data.csv", delimiter=",", skiprows=1)
 T = DATA[-1, 0]
@@ -106,7 +103,8 @@ def stats_fn(x_1, x_2):
 
 
 # KERNEL
-def loop(key, init_delta, init_state, delta_fn, n_iter, verbose=False, return_samples=False, update_theta=False):
+def loop(key, init_delta, init_state, delta_fn, n_iter, target_alpha=None, lr=None, verbose=False, return_samples=False,
+         update_theta=False):
     from datetime import datetime
     keys = jax.random.split(key, n_iter)
 
@@ -143,8 +141,8 @@ def loop(key, init_delta, init_state, delta_fn, n_iter, verbose=False, return_sa
         stats = tree_map(lambda u, v: (i * u + v) / (i + 1), stats, next_stats)
 
         if delta_fn is not None:
-            lr = (n_iter - i) * args.lr / n_iter
-            delta = delta_fn(delta, args.target_alpha, window_avg_acceptance, lr)
+            lr_ = (n_iter - i) * lr / n_iter
+            delta = delta_fn(delta, target_alpha, window_avg_acceptance, lr_)
         if update_theta:
             theta_mean, theta_chol = theta_posterior_mean_and_chol(next_kalman_state.x, theta_prior_cov, SMOOTH_FREQ,
                                                                    SIGMA_X)
@@ -165,24 +163,38 @@ def loop(key, init_delta, init_state, delta_fn, n_iter, verbose=False, return_sa
     return out, xs
 
 
-# @partial(jax.jit, static_argnums=(1,))
+@partial(jax.jit, static_argnums=(1,))
 def one_experiment(exp_key, verbose=args.verbose):
     # DATA
-    data_key, init_key, burnin_key, sample_key = jax.random.split(exp_key, 4)
+    burnin_key, sample_key = jax.random.split(exp_key, 2)
 
     # INIT
     xs_init = init_x_fn(DATA, N_STEPS)
-    theta_init_mean, theta_init_chol = theta_posterior_mean_and_chol(xs_init, theta_prior_cov, SMOOTH_FREQ, SIGMA_X)
     init_kalman_state = KalmanSampler(x=xs_init, updated=True)  # noqa
 
-    init_state = GibbsState(kalman_state=init_kalman_state, theta=true_theta)
+    init_state = GibbsState(kalman_state=init_kalman_state, theta=THETA_0)
     # BURNIN
     (_, _, burnin_state, burnin_delta, burnin_avg_acceptance, _), _ = loop(burnin_key,
                                                                            args.delta_init,
                                                                            init_state,
                                                                            delta_adaptation,
                                                                            args.burnin,
-                                                                           verbose)
+                                                                           args.target_alpha_1,
+                                                                           args.lr_1,
+                                                                           verbose=verbose,
+                                                                           update_theta=False)
+
+    delta_fn = partial(delta_adaptation, min_delta=args.min_delta, max_delta=args.max_delta)
+    (_, _, burnin_state, burnin_delta, burnin_avg_acceptance, _), _ = loop(burnin_key,
+                                                                           args.delta_init,
+                                                                           burnin_state,
+                                                                           delta_fn,
+                                                                           args.burnin,
+                                                                           args.target_alpha_2,
+                                                                           args.lr_2,
+                                                                           verbose=verbose,
+                                                                           update_theta=True)
+
     from jax.experimental.host_callback import call
 
     def tic_fn(arr):
@@ -196,8 +208,10 @@ def one_experiment(exp_key, verbose=args.verbose):
                              result_shape=output_shape)
     (_, stats, _, out_delta, _, pct_accepted), (traj_samples, theta_samples) = loop(sample_key, burnin_delta,
                                                                                     burnin_state, None,
-                                                                                    args.n_samples, verbose, True,
-                                                                                    False)
+                                                                                    args.n_samples,
+                                                                                    verbose=verbose,
+                                                                                    update_theta=True,
+                                                                                    return_samples=True)
 
     output_shape = (jax.ShapeDtypeStruct((), pct_accepted.dtype),
                     jax.ShapeDtypeStruct(pct_accepted.shape, pct_accepted.dtype))
@@ -244,7 +258,7 @@ def full_experiment():
         ax.set_xlim(traj_samples[..., 0].min(), traj_samples[..., 0].max())
         ax.set_ylim(traj_samples[..., 1].min(), traj_samples[..., 1].max())
         ax.set_zlim(traj_samples[..., 2].min(), traj_samples[..., 2].max())
-        ax.plot(true_xs[:, 1], true_xs[:, 2], true_xs[:, 3], 'k', alpha=1)
+        ax.plot(true_xs[:, 0], true_xs[:, 1], true_xs[:, 2], 'k', alpha=1)
 
         ax.set_xlabel('X')
         ax.set_ylabel('Y')
@@ -252,14 +266,14 @@ def full_experiment():
         ax.view_init(15, rot)
         plt.show()
 
-    return ejsd_per_key, acceptance_rate_per_key, delta_per_key, time_per_key
+    return time_taken, esjd, traj, squared_exp, xs_init, pct_accepted, burnin_delta, traj_samples, theta_samples
 
 
 def main():
     import os
     with jax.disable_jit(args.debug):
         with jax.debug_nans(args.debug_nans):
-            ejsd_per_key, acceptance_rate_per_key, delta_per_key, time_per_key = full_experiment()
+            time_taken, esjd, traj, squared_exp, xs_init, pct_accepted, burnin_delta, traj_samples, theta_samples = full_experiment()
     file_name = f"results/{args.style}-{args.D}-{args.T}-{args.N}-{args.parallel}-{args.gradient}.npz"
     if not os.path.isdir("results"):
         os.mkdir("results")

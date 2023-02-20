@@ -1,6 +1,5 @@
 import matplotlib.pyplot as plt
 import numpy as np
-import tikzplotlib
 import pandas as pd
 
 N_SAMPLES = 10_000
@@ -46,7 +45,6 @@ plt.figure(figsize=(30, 15))
 print(csmc_time.mean(), csmc_grad_time.mean(), kalman_1_time.mean(), kalman_2_time.mean())
 print(np.median(csmc_grad_esjd, 0), np.median(csmc_esjd, 0), np.mean(kalman_1_esjd, 0), np.mean(kalman_2_esjd, 0))
 
-
 csmc_time_per_iter = csmc_time[1:, None] / N_SAMPLES
 csmc_grad_time_per_iter = csmc_grad_time[1:, None] / N_SAMPLES
 kalman_1_time_per_iter = kalman_1_time[1:, None] / N_SAMPLES
@@ -61,7 +59,6 @@ csmc_esjd_per_time = csmc_esjd / csmc_time_per_iter
 csmc_grad_esjd_per_time = csmc_grad_esjd / csmc_grad_time_per_iter
 kalman_1_esjd_per_time = kalman_1_esjd / kalman_1_time_per_iter
 kalman_2_esjd_per_time = kalman_2_esjd / kalman_2_time_per_iter
-
 
 esjd_time_df = pd.DataFrame([np.arange(T),
                              csmc_esjd_per_time.mean(0),

@@ -237,6 +237,7 @@ def _get_parallel_coupled_kernel(M0: Distribution, G0: UnivariatePotential, Mt: 
 
     return init, kernel
 
+
 def _log_pdf(u, M0, G0, Mt, Gt):
     # Compute the log-pdf of the auxiliary variable
 

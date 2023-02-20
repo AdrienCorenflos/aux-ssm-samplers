@@ -1,6 +1,5 @@
 import matplotlib.pyplot as plt
 import numpy as np
-import tikzplotlib
 import pandas as pd
 
 N_SAMPLES = 10_000
@@ -46,6 +45,9 @@ csmc_guided_delta = csmc_guided["delta_per_key"]
 csmc_guided_rate = csmc_guided["acceptance_rate_per_key"]
 csmc_guided_esjd = csmc_guided["ejsd_per_key"]
 
+plt.plot(csmc_guided_delta)
+plt.show()
+
 # Plot the EJSD
 plt.figure(figsize=(30, 15))
 
@@ -64,7 +66,6 @@ kalman_2_time_per_iter = kalman_2_time[1:, None] / N_SAMPLES
 csmc_guided_time_per_iter = csmc_guided_time[1:, None] / N_SAMPLES
 csmc_guided_grad_time_per_iter = csmc_guided_grad_time[1:, None] / N_SAMPLES
 
-
 csmc_esjd = csmc_esjd[1:].sum(-1) ** 0.5
 csmc_grad_esjd = csmc_grad_esjd[1:].sum(-1) ** 0.5
 kalman_1_esjd = kalman_1_esjd[1:].sum(-1) ** 0.5
@@ -79,7 +80,6 @@ kalman_2_esjd_per_time = kalman_2_esjd / kalman_2_time_per_iter
 csmc_guided_esjd_per_time = csmc_guided_esjd / csmc_guided_time_per_iter
 csmc_guided_grad_esjd_per_time = csmc_guided_grad_esjd / csmc_guided_grad_time_per_iter
 
-
 esjd_time_df = pd.DataFrame([np.arange(T),
                              csmc_esjd_per_time.mean(0),
                              csmc_grad_esjd_per_time.mean(0),
@@ -87,7 +87,8 @@ esjd_time_df = pd.DataFrame([np.arange(T),
                              kalman_2_esjd_per_time.mean(0),
                              csmc_guided_esjd_per_time.mean(0),
                              csmc_guided_grad_esjd_per_time.mean(0)],
-                            index=["t", "cSMC", "cSMC_grad", "Kalman_1", "Kalman_2", "cSMC_guided", "cSMC_guided_grad"]).T
+                            index=["t", "cSMC", "cSMC_grad", "Kalman_1", "Kalman_2", "cSMC_guided",
+                                   "cSMC_guided_grad"]).T
 esjd_df = pd.DataFrame([np.arange(T),
                         csmc_esjd.mean(0),
                         csmc_grad_esjd.mean(0),
@@ -95,7 +96,7 @@ esjd_df = pd.DataFrame([np.arange(T),
                         kalman_2_esjd.mean(0),
                         csmc_guided_esjd.mean(0),
                         csmc_guided_grad_esjd.mean(0)],
-                       index=["t", "cSMC", "cSMC_grad", "Kalman_1", "Kalman_2",  "cSMC_guided", "cSMC_guided_grad"]).T
+                       index=["t", "cSMC", "cSMC_grad", "Kalman_1", "Kalman_2", "cSMC_guided", "cSMC_guided_grad"]).T
 
 esjd_df.to_csv(f"ESJD_{GPU}.csv")
 esjd_time_df.to_csv(f"ESJD_time_{GPU}.csv")
