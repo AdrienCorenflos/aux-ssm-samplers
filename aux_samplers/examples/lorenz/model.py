@@ -19,11 +19,24 @@ def phi(x):
 
 def get_dynamics(theta, sigma_x, dt):
     def mean(x, _params):
-        return x + dt * phi_0(x) + dt * theta * phi(x)
+        return x + dt * (phi_0(x) + theta * phi(x))
 
     Q = dt * sigma_x ** 2 * jnp.eye(3)
     return mean, Q
 
+
+
+def sample_trajectory(key, m0, P0, theta, sigma_x, dt, n_steps):
+    mean, _ = get_dynamics(theta, sigma_x, dt)
+    def body_fn(x, op_key):
+        x = mean(x, None)
+        x += sigma_x * jax.random.normal(op_key, x.shape) * jnp.sqrt(dt)
+        return x, x
+    init_key, key = jax.random.split(key)
+    x0 = jax.random.multivariate_normal(init_key, mean=m0, cov=P0)
+    _, xs = jax.lax.scan(body_fn, x0, jax.random.split(key, n_steps-1))
+    xs = jnp.insert(xs, 0, x0, axis=0)
+    return xs
 
 def observations_model(data, sig_y, n_steps, sample_every):
     ys = data[:, 1:]
@@ -41,17 +54,26 @@ def observations_model(data, sig_y, n_steps, sample_every):
     return ys_extended, Hs, Rs, cs
 
 
-def theta_posterior_mean_and_chol(x, prior_cov, dt, sigma_x):
+def theta_posterior_mean_and_chol(x, sigma_theta, dt, sigma_x):
     """Posterior over theta given x and prior covariance."""
     phis = jax.vmap(phi)(x[:-1])
     phis_0 = jax.vmap(phi_0)(x[:-1])
     dx = x[1:] - x[:-1]
-    mu = jnp.sum(phis * (dx - dt * phis_0), 0)
-    Gamma_inv = dt * jnp.einsum("ij,ik->jk", phis, phis) / sigma_x ** 2
-    Gamma_inv = Gamma_inv + jnp.linalg.inv(prior_cov)
-    Gamma = jnp.linalg.inv(Gamma_inv)
-    mean = Gamma @ mu / sigma_x ** 2
-    chol = jnp.linalg.cholesky(Gamma_inv)
+
+    # Express as a standard Bayes linear regression
+    Y = dx - dt * phis_0
+    X = dt * phis
+    sigma_Y = sigma_x * dt ** 0.5
+
+    X_XT = jnp.einsum("ij,ij->j", X, X)
+    XT_Y = jnp.einsum("ij,ij->j", X, Y)
+
+    Sigma_inv = X_XT + 1 / sigma_theta ** 2
+    Sigma = 1 / Sigma_inv
+
+    mean = Sigma * XT_Y
+    chol = sigma_Y * jnp.diag(Sigma ** 0.5)
+
     return mean, chol
 
 
@@ -62,6 +84,6 @@ def init_x_fn(data, n_steps):
     ts = jnp.linspace(0, T, n_steps)
     xs = jnp.ones((n_steps, 3))
     xs = xs.at[:, 0].set(25)
-    xs = xs.at[:, 1].set(jnp.interp(ts, data[:, 0], data[:, 1]))
-    xs = xs.at[:, 2].set(jnp.interp(ts, data[:, 0], data[:, 2]))
+    xs = xs.at[:, 1].set(jnp.interp(ts, data[:, 0], data[:, -2]))
+    xs = xs.at[:, 2].set(jnp.interp(ts, data[:, 0], data[:, -1]))
     return xs

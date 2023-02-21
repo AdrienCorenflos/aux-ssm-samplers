@@ -20,7 +20,8 @@ from jax.tree_util import tree_map
 from aux_samplers.common import delta_adaptation
 from aux_samplers.kalman.generic import KalmanSampler
 from auxiliary_kalman import get_kernel as get_kalman_kernel
-from model import init_x_fn, observations_model, theta_posterior_mean_and_chol
+from model import observations_model, theta_posterior_mean_and_chol, sample_trajectory
+import tensorflow_probability.substrates.jax as tfp
 
 # ARGS PARSING
 
@@ -41,27 +42,30 @@ parser.set_defaults(gpu=True)
 parser.add_argument('--verbose', action='store_true')
 parser.add_argument('--no-verbose', dest='verbose', action='store_false')
 parser.set_defaults(verbose=True)
+parser.add_argument("--precision", dest="precision", type=str, default="single")
 
 # Experiment arguments
-parser.add_argument("--n-samples", dest="n_samples", type=int, default=10_000)
+parser.add_argument("--n-samples", dest="n_samples", type=int, default=100_000)
 parser.add_argument("--burnin", dest="burnin", type=int, default=2_500)
-parser.add_argument("--target-alpha-1", dest="target_alpha_1", type=float, default=0.234)
-parser.add_argument("--target-alpha-2", dest="target_alpha_2", type=float, default=0.5)
-parser.add_argument("--lr-1", dest="lr_1", type=float, default=1.)
-parser.add_argument("--lr-2", dest="lr_2", type=float, default=0.05)
-parser.add_argument("--beta", dest="beta", type=float, default=0.01)
+parser.add_argument("--target-alpha", dest="target_alpha", type=float, default=0.234)
+parser.add_argument("--lr", dest="lr", type=float, default=1.)
+parser.add_argument("--beta", dest="beta", type=float, default=0.05)
 parser.add_argument("--delta-init", dest="delta_init", type=float, default=1e-5)
 parser.add_argument("--min-delta", dest="min_delta", type=float, default=1e-15)
-parser.add_argument("--max-delta", dest="max_delta", type=float, default=1e0)
-parser.add_argument("--seed", dest="seed", type=int, default=42)
+parser.add_argument("--max-delta", dest="max_delta", type=float, default=1e20)
+parser.add_argument("--seed", dest="seed", type=int, default=123)
 parser.add_argument("--style", dest="style", type=str, default="kalman")
+parser.add_argument("--freq", dest="freq", type=int, default=20)
 
 args = parser.parse_args()
 
 # BACKEND CONFIG
 NOW = time.time()
 
-jax.config.update("jax_enable_x64", False)
+if args.precision.lower() in {"single", "float32", "32"}:
+    jax.config.update("jax_enable_x64", False)
+elif args.precision.lower() in {"double", "float64", "64"}:
+    jax.config.update("jax_enable_x64", True)
 if not args.gpu:
     jax.config.update("jax_platform_name", "cpu")
 else:
@@ -69,7 +73,7 @@ else:
 
 # PARAMETERS
 # we use the exact same parameters as Mider et al.
-theta_prior_cov = 1e3 * jnp.eye(3)
+sigma_theta = 1e3 ** 0.5
 true_theta = jnp.array([10., 28., 8. / 3.])
 true_xs = np.loadtxt("true_xs.csv", delimiter=",", skiprows=1)[:, 1:]
 
@@ -81,7 +85,7 @@ THETA_0 = jnp.array([5.0, 15.0, 6.0])
 DATA = np.loadtxt("data.csv", delimiter=",", skiprows=1)
 T = DATA[-1, 0]
 OBS_FREQ = DATA[1, 0] - DATA[0, 0]
-SMOOTH_FREQ = 2e-4
+SMOOTH_FREQ = args.freq * 1e-4
 N_STEPS = int(T / SMOOTH_FREQ + 1e-6) + 1
 SAMPLE_EVERY = int(OBS_FREQ / SMOOTH_FREQ + 1e-6)
 
@@ -144,7 +148,7 @@ def loop(key, init_delta, init_state, delta_fn, n_iter, target_alpha=None, lr=No
             lr_ = (n_iter - i) * lr / n_iter
             delta = delta_fn(delta, target_alpha, window_avg_acceptance, lr_)
         if update_theta:
-            theta_mean, theta_chol = theta_posterior_mean_and_chol(next_kalman_state.x, theta_prior_cov, SMOOTH_FREQ,
+            theta_mean, theta_chol = theta_posterior_mean_and_chol(next_kalman_state.x, sigma_theta, SMOOTH_FREQ,
                                                                    SIGMA_X)
             next_theta = theta_mean + theta_chol @ jax.random.normal(key_theta, (3,))
         else:
@@ -153,7 +157,8 @@ def loop(key, init_delta, init_state, delta_fn, n_iter, target_alpha=None, lr=No
         next_state = GibbsState(kalman_state=next_kalman_state, theta=next_theta)
         carry = i + 1, stats, next_state, delta, window_avg_acceptance, avg_acceptance
         if return_samples:
-            return carry, (next_kalman_state.x[::SAMPLE_EVERY], next_theta)
+            every = N_STEPS // 4
+            return carry, (next_kalman_state.x[::every], next_theta)
         return carry, None
 
     init_stats = stats_fn(init_state.kalman_state.x, init_state.kalman_state.x)
@@ -166,34 +171,39 @@ def loop(key, init_delta, init_state, delta_fn, n_iter, target_alpha=None, lr=No
 @partial(jax.jit, static_argnums=(1,))
 def one_experiment(exp_key, verbose=args.verbose):
     # DATA
-    burnin_key, sample_key = jax.random.split(exp_key, 2)
+    init_key, burnin_key, sample_key = jax.random.split(exp_key, 3)
 
     # INIT
-    xs_init = init_x_fn(DATA, N_STEPS)
+    xs_init = sample_trajectory(init_key, M0, P0, THETA_0, SIGMA_X, SMOOTH_FREQ, N_STEPS)
+    # xs_init = sample_trajectory(init_key, M0, P0, THETA_0, SIGMA_X, SMOOTH_FREQ, N_STEPS)
+
+    # jax.debug.print("mean: {},\n chol:{}", m)
     init_kalman_state = KalmanSampler(x=xs_init, updated=True)  # noqa
 
     init_state = GibbsState(kalman_state=init_kalman_state, theta=THETA_0)
     # BURNIN
+    delta_fn = partial(delta_adaptation, min_delta=args.min_delta, max_delta=args.max_delta)
+
     (_, _, burnin_state, burnin_delta, burnin_avg_acceptance, _), _ = loop(burnin_key,
                                                                            args.delta_init,
                                                                            init_state,
                                                                            delta_adaptation,
                                                                            args.burnin,
-                                                                           args.target_alpha_1,
-                                                                           args.lr_1,
-                                                                           verbose=verbose,
-                                                                           update_theta=False)
-
-    delta_fn = partial(delta_adaptation, min_delta=args.min_delta, max_delta=args.max_delta)
-    (_, _, burnin_state, burnin_delta, burnin_avg_acceptance, _), _ = loop(burnin_key,
-                                                                           args.delta_init,
-                                                                           burnin_state,
-                                                                           delta_fn,
-                                                                           args.burnin,
-                                                                           args.target_alpha_2,
-                                                                           args.lr_2,
+                                                                           args.target_alpha,
+                                                                           args.lr,
                                                                            verbose=verbose,
                                                                            update_theta=True)
+
+    # delta_fn = partial(delta_adaptation, min_delta=args.min_delta, max_delta=args.max_delta)
+    # (_, _, burnin_state, burnin_delta, burnin_avg_acceptance, _), _ = loop(burnin_key,
+    #                                                                        args.delta_init,
+    #                                                                        burnin_state,
+    #                                                                        delta_fn,
+    #                                                                        args.burnin,
+    #                                                                        args.target_alpha_2,
+    #                                                                        args.lr_2,
+    #                                                                        verbose=verbose,
+    #                                                                        update_theta=True)
 
     from jax.experimental.host_callback import call
 
@@ -227,44 +237,35 @@ def full_experiment():
     time_taken, (
         esjd, traj, squared_exp), xs_init, pct_accepted, burnin_delta, traj_samples, theta_samples = one_experiment(key)
 
-    import matplotlib.pyplot as plt
-    fig, axes = plt.subplots(ncols=3, figsize=(20, 3))
-    axes[0].plot(theta_samples[:, 0])
-    axes[1].plot(theta_samples[:, 1])
-    axes[2].plot(theta_samples[:, 2])
-
-    plt.show()
-    fig, axes = plt.subplots(ncols=3, figsize=(20, 3))
-    axes[0].plot(traj_samples[:, 150, 0])
-    axes[1].plot(traj_samples[:, 150, 1])
-    axes[2].plot(traj_samples[:, 150, 2])
-
-    plt.show()
-
-    import matplotlib.pyplot as plt
-    from mpl_toolkits.mplot3d.art3d import Line3DCollection
-    for rot in range(0, 360, 10):
-        fig = plt.figure()
-        fig.suptitle(f"Rot: {rot}")
-        ax = plt.axes(projection='3d')
-        ax.set_box_aspect(aspect=(1, 1, 1))
-        for sample in traj_samples[::200]:
-            sample = sample.reshape(-1, 1, 3)
-            segments = np.concatenate([sample[:-1], sample[1:]], axis=1)
-            lc = Line3DCollection(segments, cmap=plt.get_cmap('winter'))
-            lc.set_array(DATA[:, 0] / T)
-            lc.set_alpha(0.05)
-            ax.add_collection3d(lc)
-        ax.set_xlim(traj_samples[..., 0].min(), traj_samples[..., 0].max())
-        ax.set_ylim(traj_samples[..., 1].min(), traj_samples[..., 1].max())
-        ax.set_zlim(traj_samples[..., 2].min(), traj_samples[..., 2].max())
-        ax.plot(true_xs[:, 0], true_xs[:, 1], true_xs[:, 2], 'k', alpha=1)
-
-        ax.set_xlabel('X')
-        ax.set_ylabel('Y')
-        ax.set_zlabel('Z')
-        ax.view_init(15, rot)
-        plt.show()
+    # import matplotlib.pyplot as plt
+    # fig, axes = plt.subplots(ncols=3, figsize=(20, 3))
+    # axes[0].plot(theta_samples[:, 0])
+    # axes[1].plot(theta_samples[:, 1])
+    # axes[2].plot(theta_samples[:, 2])
+    #
+    # plt.show()
+    # fig, axes = plt.subplots(ncols=3, figsize=(20, 3))
+    # axes[0].plot(traj_samples[:, 0, 0])
+    # axes[1].plot(traj_samples[:, 0, 1])
+    # axes[2].plot(traj_samples[:, 0, 2])
+    #
+    # plt.show()
+    # fig, axes = plt.subplots(ncols=3, figsize=(20, 3))
+    # axes[0].plot(traj_samples[:, 1, 0])
+    # axes[1].plot(traj_samples[:, 1, 1])
+    # axes[2].plot(traj_samples[:, 1, 2])
+    #
+    # plt.show()
+    # fig, axes = plt.subplots(ncols=3, figsize=(20, 3))
+    # axes[0].plot(traj_samples[:, 2, 0])
+    # axes[1].plot(traj_samples[:, 2, 1])
+    # axes[2].plot(traj_samples[:, 2, 2])
+    #
+    # plt.show()
+    #
+    # print(tfp.mcmc.effective_sample_size(theta_samples))
+    # print()
+    # print(tfp.mcmc.effective_sample_size(traj_samples))
 
     return time_taken, esjd, traj, squared_exp, xs_init, pct_accepted, burnin_delta, traj_samples, theta_samples
 
@@ -274,14 +275,19 @@ def main():
     with jax.disable_jit(args.debug):
         with jax.debug_nans(args.debug_nans):
             time_taken, esjd, traj, squared_exp, xs_init, pct_accepted, burnin_delta, traj_samples, theta_samples = full_experiment()
-    file_name = f"results/{args.style}-{args.D}-{args.T}-{args.N}-{args.parallel}-{args.gradient}.npz"
+    file_name = f"results/{args.style}-{args.parallel}-{args.freq}.npz"
     if not os.path.isdir("results"):
         os.mkdir("results")
     np.savez(file_name,
-             ejsd_per_key=ejsd_per_key,
-             acceptance_rate_per_key=acceptance_rate_per_key,
-             delta_per_key=delta_per_key,
-             time_per_key=time_per_key)
+             time_taken=time_taken,
+             esjd=esjd,
+             traj=traj,
+             squared_exp=squared_exp,
+             xs_init=xs_init,
+             pct_accepted=pct_accepted,
+             burnin_delta=burnin_delta,
+             traj_samples=traj_samples,
+             theta_samples=theta_samples)
 
 
 if __name__ == "__main__":

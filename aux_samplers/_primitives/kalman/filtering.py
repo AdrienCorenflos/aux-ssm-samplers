@@ -121,7 +121,7 @@ def sequential_update(y, m, P, H, c, R):
         S = jnp.nan_to_num(S, nan=0., posinf=0., neginf=0.)
         P_ = P_ - G @ S @ G.T
         P_ = 0.5 * (P_ + P_.T)
-        return m_, P_, jnp.nan_to_num(ell_inc)
+        return m_, P_, jnp.nan_to_num(ell_inc, nan=0.)
 
     def _passthrough(m_, P_):
         return m_, P_, 0.
