@@ -93,8 +93,7 @@ def get_optimal_covariance(chol_P: Float[Array, "dim dim"], chol_Sig: Float[Arra
     chol_Q: jnp.ndarray
         Cholesky of the resulting dominating matrix.
     """
-    d, _ = chol_P.shape
-    if d == 1:
+    if (jnp.ndim(chol_P) < 2 and jnp.ndim(chol_Sig) < 2) or chol_P.shape[0] == 1:
         return jnp.maximum(chol_P, chol_Sig)
 
     right_Y = solve_triangular(chol_P, chol_Sig, lower=True)  # Y = RY.T RY
@@ -122,5 +121,8 @@ def tril_log_det(chol):
     """
 
     # Replace nans and infs in the Cholesky decomposition by 1. as they will then be ignored by the log.
-    diag_chol = jnp.nan_to_num(jnp.diag(chol), nan=1., posinf=1., neginf=1.)
+    if jnp.ndim(chol) == 2:
+        diag_chol = jnp.nan_to_num(jnp.diag(chol), nan=1., posinf=1., neginf=1.)
+    else:
+        diag_chol = jnp.nan_to_num(chol, nan=1., posinf=1., neginf=1.)
     return jnp.nansum(jnp.log(jnp.abs(diag_chol)))

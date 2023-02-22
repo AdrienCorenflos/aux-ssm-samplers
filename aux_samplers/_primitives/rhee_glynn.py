@@ -9,23 +9,39 @@ from jax.tree_util import tree_map
 from aux_samplers._primitives.base import CoupledSamplerState
 
 
-@partial(jax.jit, static_argnums=(1, 2, 3, 4, 5, 6))
+@partial(jax.jit, static_argnums=(1, 3, 4, 5, 6))
 def estimator(key,
               coupled_kernel: Callable[[chex.PRNGKey, CoupledSamplerState], CoupledSamplerState],
-              init_sampler: Callable[[chex.PRNGKey], CoupledSamplerState],
+              coupled_state_init: CoupledSamplerState,
               k,
               m,
               test_fn,
               return_standard_term=False):
+    """
+    Rhee & Glynn estimator.
+    This returns the standard mcmc estimate, and the bias correction term. It is computed online and in a single pass.
+
+    The coupled_state_init is the initial state of the coupled sampler. It is assumed that the sampler has already been
+    delayed for one step.
+
+    Parameters
+    ----------
+    key
+    coupled_kernel
+    coupled_state_init
+    k
+    m
+    test_fn
+    return_standard_term
+
+    Returns
+    -------
+
+    """
+
+
     if not 1 <= k <= m:
         raise ValueError("We must have 1 <= k <= m")
-
-    key, init_key_1, init_key_2 = jax.random.split(key, 3)
-    coupled_state_init = init_sampler(init_key_1)
-
-    # Dephase the chains by one step
-    coupled_state = coupled_kernel(init_key_2, coupled_state_init)
-    coupled_state.state_2, coupled_state.flags = coupled_state_init.state_2, coupled_state_init.flags
 
     den = m - k
 
@@ -39,7 +55,7 @@ def estimator(key,
         return key_t_p_1, coupled_state_t_p_1, coupling_time_t
 
     key, coupled_state, coupling_time = jax.lax.fori_loop(0, k - 1,
-                                                          first_body, (key, coupled_state, 1))
+                                                          first_body, (key, coupled_state_init, 1))
 
     # Second loop: compute the standard mcmc estimate, and the bias correction term.
     x_k = coupled_state.state_1.x
@@ -58,9 +74,9 @@ def estimator(key,
         key_t_p_1, sample_key = jax.random.split(key_t, 2)
         coupled_state_t_p_1 = coupled_kernel(sample_key, coupled_state_t)
         t_p_1 = t + 1
-
         coupled_t_p_1 = coupled_state_t_p_1.is_coupled | coupled_state_t.is_coupled
 
+        jax.debug.print("coupled: {}", coupled_state_t_p_1.flags.mean())
         # accumulate the standard mcmc estimate
         first_cond = t_p_1 < m
 
@@ -88,7 +104,8 @@ def estimator(key,
         return t_p_1, key_t_p_1, coupled_state_t_p_1, one_t_p_1, two_t_p_1, coupling_time_t
 
     total_t, *_, standard_term, bias_correction, coupling_time = jax.lax.while_loop(cond, second_body, init_loop)
-    h_km = standard_term + bias_correction
+
+    h_km = tree_map(lambda u, v: u + v, standard_term, bias_correction)
     if return_standard_term:
         return h_km, total_t, coupling_time, standard_term
     return h_km, total_t, coupling_time

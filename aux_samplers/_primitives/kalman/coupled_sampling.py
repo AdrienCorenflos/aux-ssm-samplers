@@ -7,7 +7,7 @@ from chex import PRNGKey
 from .base import LGSSM
 from .dnc_sampling import make_dnc_tree
 from .sampling import mean_and_chol
-from ..math.mvn import rejection, thorisson, modified_lindvall_roger
+from ..math.mvn import rejection, thorisson, modified_lindvall_roger, reflection
 
 _EPS = 0.01  # this is a small float to make sure that log2(2**k) = k exactly
 
@@ -100,14 +100,7 @@ def progressive(key: PRNGKey, lgssm_1: LGSSM, lgssm_2: LGSSM, ms_1, Ps_1, ms_2, 
 
     """
 
-    if method == "rejection":
-        coupling_method_fn = partial(rejection, **coupling_params)
-    elif method == "thorisson":
-        coupling_method_fn = partial(thorisson, **coupling_params)
-    elif method == "lindvall-roger":
-        coupling_method_fn = modified_lindvall_roger
-    else:
-        raise NotImplementedError
+    coupling_method_fn = select_coupling(coupling_params, method)
 
     def body(carry, inps):
         x1, x2, op_k = carry
@@ -146,7 +139,7 @@ def progressive(key: PRNGKey, lgssm_1: LGSSM, lgssm_2: LGSSM, ms_1, Ps_1, ms_2, 
 def divide_and_conquer(key: PRNGKey, lgssm_1: LGSSM, lgssm_2: LGSSM, ms_1, Ps_1, ms_2, Ps_2,
                        method: str = "rejection", **coupling_params):
     """
-    Progressive coupling between two LGSSM models.
+    DnC coupling between two LGSSM models.
 
     Parameters
     ----------
@@ -181,29 +174,8 @@ def divide_and_conquer(key: PRNGKey, lgssm_1: LGSSM, lgssm_2: LGSSM, ms_1, Ps_1,
 
     """
 
-    if method == "rejection":
-        coupling_method_fn = partial(rejection, **coupling_params)
-    elif method == "thorisson":
-        coupling_method_fn = partial(thorisson, **coupling_params)
-    elif method == "lindvall-roger":
-        coupling_method_fn = modified_lindvall_roger
-    else:
-        raise NotImplementedError
+    coupling_method_fn = select_coupling(coupling_params, method)
 
-    """
-        Samples from the pathwise smoothing distribution a LGSSM.
-
-        Parameters
-        ----------
-        key: PRNGKey
-            Random number generator key.
-        ms: Array
-            Filtering means of the LGSSM.
-        Ps: Array
-            Filtering covariances of the LGSSM.
-        lgssm: LGSSM
-            LGSSM parameters.
-        """
     key, key_0, key_T = jax.random.split(key, 3)
 
     # Sample from the last time step
@@ -284,3 +256,17 @@ def _coupling_method_fn_wrapper(key, m1, L1, m2, L2, coupling_method_fn):
     b, *_ = m1.shape
     keys = jax.random.split(key, b)
     return jax.vmap(coupling_method_fn, in_axes=(0, 0, 0, 0, 0))(keys, m1, L1, m2, L2)
+
+
+def select_coupling(coupling_params, method):
+    if method == "rejection":
+        coupling_method_fn = partial(rejection, **coupling_params)
+    elif method == "thorisson":
+        coupling_method_fn = partial(thorisson, **coupling_params)
+    elif method == "lindvall-roger":
+        coupling_method_fn = modified_lindvall_roger
+    elif method == "reflection":
+        coupling_method_fn = reflection
+    else:
+        raise NotImplementedError
+    return coupling_method_fn

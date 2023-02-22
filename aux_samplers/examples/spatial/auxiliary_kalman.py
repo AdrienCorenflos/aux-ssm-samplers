@@ -59,8 +59,12 @@ def get_kernel(ys, m0, P0, F, Q, b, parallel, log_potential_args, order=1, coupl
 
     if not coupled:
         def init(xs):
-            return init_(jnp.expand_dims(xs, -1))
+            if jnp.ndim(xs) == 2:
+                return init_(jnp.expand_dims(xs, -1))
+            return init_(xs)
     else:
         def init(xs_1, xs_2):
-            return init_(jnp.expand_dims(xs_1, -1), jnp.expand_dims(xs_2, -1))
+            if jnp.ndim(xs_1) == 2:
+                return init_(jnp.expand_dims(xs_1, -1), jnp.expand_dims(xs_2, -1))
+            return init_(xs_1, xs_2)
     return init, kernel

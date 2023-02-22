@@ -10,7 +10,7 @@ from jax import numpy as jnp
 from .._primitives.base import CoupledSamplerState
 from .._primitives.csmc import get_kernel as get_standard_kernel, get_coupled_kernel as get_standard_coupled_kernel
 from .._primitives.csmc.base import Distribution, UnivariatePotential, Dynamics, Potential, CSMCState
-from .._primitives.math.mvn.couplings import lindvall_roger
+from .._primitives.math.mvn.couplings import lindvall_roger, reflection
 
 
 def get_kernel(factory: Callable,
@@ -106,7 +106,7 @@ def _get_coupled_kernel(
         auxiliary_key, key = jax.random.split(key)
 
         # Auxiliary observations
-        mvn_coupling = lambda k, a, b: lindvall_roger(k, a, b, sqrt_half_delta, sqrt_half_delta)
+        mvn_coupling = lambda k, a, b: reflection(k, a, sqrt_half_delta, b, sqrt_half_delta)
         aux_keys = jax.random.split(auxiliary_key, T)
         u_1, u_2, _ = jax.vmap(mvn_coupling)(aux_keys, x_1, x_2)
 

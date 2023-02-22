@@ -217,7 +217,7 @@ def _get_parallel_coupled_kernel(M0: Distribution, G0: UnivariatePotential, Mt: 
         auxiliary_key, key = jax.random.split(key)
 
         # Auxiliary observations
-        mvn_coupling = lambda k, a, b: lindvall_roger(k, a, b, sqrt_half_delta, sqrt_half_delta)
+        mvn_coupling = lambda k, a, b: reflection(k, a, sqrt_half_delta, b, sqrt_half_delta)
         aux_keys = jax.random.split(auxiliary_key, T)
         u_1, u_2, _ = jax.vmap(mvn_coupling)(aux_keys, x_1, x_2)
 

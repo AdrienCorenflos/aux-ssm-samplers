@@ -1,6 +1,7 @@
 """
 Implements the auxiliary Kalman sampling algorithm with custom proposal design.
 """
+from functools import partial
 
 import jax
 from chex import dataclass, Array
@@ -8,7 +9,7 @@ from jax import numpy as jnp
 
 from .._primitives.base import SamplerState
 from .._primitives.kalman import filtering, LGSSM, sampling, posterior_logpdf, coupled_sampling
-from .._primitives.math.mvn import lindvall_roger
+from .._primitives.math.mvn import reflection, lindvall_roger
 
 
 @dataclass
@@ -131,18 +132,16 @@ def _get_coupled_kernel(dynamics_factory,
         auxiliary_key, sampling_key, accept_key = jax.random.split(key, 3)
 
         x_1, x_2 = state.state_1.x, state.state_2.x
-        T = x_1.shape[0]
 
         # Auxiliary observations
         def mvn_coupling(k, a, b):
             # Wrapper in case the model is batched
-            out_1, out_2, _ = lindvall_roger(k, jnp.ravel(a), jnp.ravel(b), sqrt_half_delta, sqrt_half_delta)
-            out_1, out_2 = jnp.reshape(out_1, a.shape), jnp.reshape(out_2, b.shape)
+            out_1, out_2, _ = lindvall_roger(k, a, sqrt_half_delta, b, sqrt_half_delta)
             return out_1, out_2
 
-        aux_keys = jax.random.split(auxiliary_key, T)
-        u_1, u_2 = jax.vmap(mvn_coupling)(aux_keys, x_1, x_2)
-
+        reshaped_x_1, reshaped_x_2 = jnp.ravel(x_1), jnp.ravel(x_2)
+        u_1, u_2 = mvn_coupling(auxiliary_key, reshaped_x_1, reshaped_x_2)
+        u_1, u_2 = jnp.reshape(u_1, x_1.shape), jnp.reshape(u_2, x_2.shape)
         # Propose new states
         log_lgssm_prop_1, log_lgssm_prop_2, log_target_prop_1, log_target_prop_2, x_prop_1, x_prop_2, coupled_ts = do_one(
             delta, sampling_key, u_1, u_2, x_1, x_2)
