@@ -82,8 +82,8 @@ def test_on_laplace(dim):
     state_1 = kernel(k2, state_1)
     sampler_init = CoupledSamplerState(state_1=state_1, state_2=state_2, flags=False)
 
-    def test_fn(z):
-        return jnp.sum(z ** 2)
+    def test_fn(state):
+        return jnp.sum(state.x ** 2)
 
     # MCMC estimates
     # We do 500 experiments with 100'000 samples each and then reshape to 25 experiments with 2'000'000 samples each

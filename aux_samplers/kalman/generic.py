@@ -6,10 +6,10 @@ from functools import partial
 import jax
 from chex import dataclass, Array
 from jax import numpy as jnp
-
+from collections.abc import Sequence
 from .._primitives.base import SamplerState
 from .._primitives.kalman import filtering, LGSSM, sampling, posterior_logpdf, coupled_sampling
-from .._primitives.math.mvn import reflection, lindvall_roger
+from .._primitives.math.mvn import lindvall_roger
 
 
 @dataclass
@@ -125,6 +125,19 @@ def _get_coupled_kernel(dynamics_factory,
                         log_likelihood_fn,
                         parallel,
                         **coupled_kwargs):
+    if isinstance(dynamics_factory, Sequence):
+        dynamics_factory_1, dynamics_factory_2 = dynamics_factory
+    else:
+        dynamics_factory_1 = dynamics_factory_2 = dynamics_factory
+    if isinstance(observations_factory, Sequence):
+        observations_factory_1, observations_factory_2 = observations_factory
+    else:
+        observations_factory_1 = observations_factory_2 = observations_factory
+    if isinstance(log_likelihood_fn, Sequence):
+        log_likelihood_fn_1, log_likelihood_fn_2 = log_likelihood_fn
+    else:
+        log_likelihood_fn_1 = log_likelihood_fn_2 = log_likelihood_fn
+
     def kernel(key, state: CoupledKalmanSampler, delta):
         # Housekeeping
         sqrt_delta = jnp.sqrt(delta)
@@ -132,6 +145,7 @@ def _get_coupled_kernel(dynamics_factory,
         auxiliary_key, sampling_key, accept_key = jax.random.split(key, 3)
 
         x_1, x_2 = state.state_1.x, state.state_2.x
+        T = x_1.shape[0]
 
         # Auxiliary observations
         def mvn_coupling(k, a, b):
@@ -139,8 +153,10 @@ def _get_coupled_kernel(dynamics_factory,
             out_1, out_2, _ = lindvall_roger(k, a, sqrt_half_delta, b, sqrt_half_delta)
             return out_1, out_2
 
-        reshaped_x_1, reshaped_x_2 = jnp.ravel(x_1), jnp.ravel(x_2)
-        u_1, u_2 = mvn_coupling(auxiliary_key, reshaped_x_1, reshaped_x_2)
+        reshaped_x_1, reshaped_x_2 = jnp.reshape(x_1, (T, -1)), jnp.reshape(x_2, (T, -1))
+        auxiliary_keys = jax.random.split(auxiliary_key, T)
+        u_1, u_2 = jax.vmap(mvn_coupling)(auxiliary_keys, reshaped_x_1, reshaped_x_2)
+
         u_1, u_2 = jnp.reshape(u_1, x_1.shape), jnp.reshape(u_2, x_2.shape)
         # Propose new states
         log_lgssm_prop_1, log_lgssm_prop_2, log_target_prop_1, log_target_prop_2, x_prop_1, x_prop_2, coupled_ts = do_one(
@@ -186,11 +202,11 @@ def _get_coupled_kernel(dynamics_factory,
 
     def do_one(delta, sampling_key, u_1, u_2, x_1, x_2, x_prop_1=None, x_prop_2=None):
         # Form the proposal LGSSM
-        m0_1, P0_1, Fs_1, Qs_1, bs_1, *_ = dynamics_factory(x_1)
-        m0_2, P0_2, Fs_2, Qs_2, bs_2, *_ = dynamics_factory(x_2)
+        m0_1, P0_1, Fs_1, Qs_1, bs_1, *_ = dynamics_factory_1(x_1)
+        m0_2, P0_2, Fs_2, Qs_2, bs_2, *_ = dynamics_factory_2(x_2)
 
-        ys_1, Hs_1, Rs_1, cs_1, *_ = observations_factory(x_1, u_1, delta)
-        ys_2, Hs_2, Rs_2, cs_2, *_ = observations_factory(x_2, u_2, delta)
+        ys_1, Hs_1, Rs_1, cs_1, *_ = observations_factory_1(x_1, u_1, delta)
+        ys_2, Hs_2, Rs_2, cs_2, *_ = observations_factory_2(x_2, u_2, delta)
 
         # Sample from the proposal
         lgssm_1 = LGSSM(m0_1, P0_1, Fs_1, Qs_1, bs_1, Hs_1, Rs_1, cs_1)
@@ -211,8 +227,7 @@ def _get_coupled_kernel(dynamics_factory,
         log_lgssm_prop_1 = posterior_logpdf(ys_1, x_prop_1, ell_1, lgssm_1)
         log_lgssm_prop_2 = posterior_logpdf(ys_2, x_prop_2, ell_2, lgssm_2)
 
-        log_target_prop_1 = log_likelihood_fn(x_prop_1)
-        log_target_prop_2 = log_likelihood_fn(x_prop_2)
+        log_target_prop_1, log_target_prop_2 = log_likelihood_fn_1(x_prop_1), log_likelihood_fn_2(x_prop_2)
 
         return log_lgssm_prop_1, log_lgssm_prop_2, log_target_prop_1, log_target_prop_2, x_prop_1, x_prop_2, coupled_ts
 

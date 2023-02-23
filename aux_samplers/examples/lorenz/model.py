@@ -72,7 +72,7 @@ def theta_posterior_mean_and_chol(x, sigma_theta, dt, sigma_x):
     Sigma = 1 / Sigma_inv
 
     mean = Sigma * XT_Y
-    chol = sigma_Y * jnp.diag(Sigma ** 0.5)
+    chol = sigma_Y * Sigma ** 0.5
 
     return mean, chol
 

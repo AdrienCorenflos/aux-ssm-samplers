@@ -188,13 +188,12 @@ def lindvall_roger(key, m1, L1, m2, L2):
         Whether the samples are coupled. This will only be true if the covariance matrices and the means are the same.
     """
 
-    dim = m1.shape[0]
     if jnp.ndim(L1) == 2:
         z = solve_triangular(L2, (m1 - m2))
     else:
         z = (m1 - m2) / L2
     e = z / jnp.linalg.norm(z)
-    norm_1 = jax.random.normal(key, (dim,))
+    norm_1 = jax.random.normal(key, m1.shape)
     norm_2 = norm_1 - 2 * jnp.dot(norm_1, e) * e
 
     if jnp.ndim(L1) == 2:
@@ -232,13 +231,12 @@ def modified_lindvall_roger(key, m1, L1, m2, L2):
     bool
         Whether the samples are coupled. This will only be true if the covariance matrices and the means are the same.
     """
-    dim = m1.shape[0]
     k1, k2, k3, k4 = jax.random.split(key, 4)
     x_1, x_2, _ = lindvall_roger(k1, m1, L1, m2, L2)
 
     log_u = jnp.log(jax.random.uniform(k2))
 
-    eps_y = jax.random.normal(k4, (dim,))
+    eps_y = jax.random.normal(k4, m1.shape)
     if jnp.ndim(L1) == 2:
         y = m1 + L1 @ eps_y
     else:

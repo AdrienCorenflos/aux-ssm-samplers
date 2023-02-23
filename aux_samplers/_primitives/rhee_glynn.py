@@ -58,9 +58,8 @@ def estimator(key,
                                                           first_body, (key, coupled_state_init, 1))
 
     # Second loop: compute the standard mcmc estimate, and the bias correction term.
-    x_k = coupled_state.state_1.x
-    init_one = tree_map(lambda z: z / den, test_fn(x_k))  # standard mcmc estimate
-    init_two = tree_map(lambda z: 0. * z, test_fn(x_k))  # bias correction term
+    init_one = tree_map(lambda z: z / den, test_fn(coupled_state.state_1))  # standard mcmc estimate
+    init_two = tree_map(lambda z: 0. * z, test_fn(coupled_state.state_1))  # bias correction term
     init_loop = k, key, coupled_state, init_one, init_two, coupling_time
 
     def cond(carry):
@@ -80,7 +79,7 @@ def estimator(key,
         # accumulate the standard mcmc estimate
         first_cond = t_p_1 < m
 
-        f_x_t_p_1 = test_fn(coupled_state_t_p_1.state_1.x)
+        f_x_t_p_1 = test_fn(coupled_state_t_p_1.state_1)
 
         def if_first(): return tree_map(lambda u, v: u + v / den, one_t, f_x_t_p_1)  # one_t + f_x_t_p_1 / den
 
@@ -92,7 +91,7 @@ def estimator(key,
         def if_not_coupled():
             factor = jnp.minimum(1., (t_p_1 - k) / den)
             # correction = correction + factor * (h(x) - h(y)) but with tree handling
-            f_y_t = test_fn(coupled_state_t_p_1.state_2.x)
+            f_y_t = test_fn(coupled_state_t_p_1.state_2)
             return tree_map(lambda u, v, w: u + factor * (v - w), two_t, f_x_t_p_1, f_y_t)
 
         def if_coupled():

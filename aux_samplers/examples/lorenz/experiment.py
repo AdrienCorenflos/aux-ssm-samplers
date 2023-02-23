@@ -21,7 +21,6 @@ from aux_samplers.common import delta_adaptation
 from aux_samplers.kalman.generic import KalmanSampler
 from auxiliary_kalman import get_kernel as get_kalman_kernel
 from model import observations_model, theta_posterior_mean_and_chol, sample_trajectory
-import tensorflow_probability.substrates.jax as tfp
 
 # ARGS PARSING
 
@@ -29,7 +28,7 @@ parser = argparse.ArgumentParser("Run a Lorenz experiment")
 # General arguments
 parser.add_argument('--parallel', action='store_true')
 parser.add_argument('--no-parallel', dest='parallel', action='store_false')
-parser.set_defaults(parallel=True)
+parser.set_defaults(parallel=False)
 parser.add_argument('--debug', action='store_true')
 parser.add_argument('--no-debug', dest='debug', action='store_false')
 parser.set_defaults(debug=False)
@@ -38,7 +37,7 @@ parser.add_argument('--no-debug-nans', dest='debug_nans', action='store_false')
 parser.set_defaults(debug_nans=False)
 parser.add_argument('--gpu', action='store_true')
 parser.add_argument('--no-gpu', dest='gpu', action='store_false')
-parser.set_defaults(gpu=True)
+parser.set_defaults(gpu=False)
 parser.add_argument('--verbose', action='store_true')
 parser.add_argument('--no-verbose', dest='verbose', action='store_false')
 parser.set_defaults(verbose=True)
@@ -106,6 +105,17 @@ def stats_fn(x_1, x_2):
     return (x_2 - x_1) ** 2, x_2, x_2 ** 2
 
 
+def gibbs_step(rng_key, state, delta):
+    kalman_state, theta = state.kalman_state, state.theta
+    key_kalman, key_theta = jax.random.split(rng_key, 2)
+
+    _, kernel_fn = get_kalman_kernel(YS, HS, RS, CS, M0, P0, theta, SIGMA_X, SMOOTH_FREQ, args.parallel)
+    next_kalman_state = kernel_fn(key_kalman, kalman_state, delta)
+    theta_mean, theta_chol = theta_posterior_mean_and_chol(next_kalman_state.x, sigma_theta, SMOOTH_FREQ, SIGMA_X)
+    next_theta = theta_mean + theta_chol * jax.random.normal(key_theta, (3,))
+    return GibbsState(kalman_state=next_kalman_state, theta=next_theta)
+
+
 # KERNEL
 def loop(key, init_delta, init_state, delta_fn, n_iter, target_alpha=None, lr=None, verbose=False, return_samples=False,
          update_theta=False):
@@ -131,32 +141,23 @@ def loop(key, init_delta, init_state, delta_fn, n_iter, target_alpha=None, lr=No
                                 jnp.min(stats[0]), jnp.max(stats[0]),
                                 state.theta[0], state.theta[1], state.theta[2]
                                 ), result=None)
-        kalman_state = state.kalman_state
-        theta = state.theta
-        key_kalman, key_theta = jax.random.split(key_inp, 2)
-
-        _, kernel_fn = get_kalman_kernel(YS, HS, RS, CS, M0, P0, theta, SIGMA_X, SMOOTH_FREQ, args.parallel)
-        next_kalman_state = kernel_fn(key_kalman, kalman_state, delta)
-        next_stats = stats_fn(kalman_state.x, next_kalman_state.x)
+        next_state = gibbs_step(key_inp, state, delta)
+        next_stats = stats_fn(state.kalman_state.x, next_state.kalman_state.x)
 
         # moving average.
-        avg_acceptance = (i * avg_acceptance + 1. * next_kalman_state.updated) / (i + 1)
-        window_avg_acceptance = args.beta * next_kalman_state.updated + (1 - args.beta) * window_avg_acceptance
+        updated = next_state.kalman_state.updated
+        avg_acceptance = (i * avg_acceptance + 1. * updated) / (i + 1)
+        window_avg_acceptance = args.beta * updated + (1 - args.beta) * window_avg_acceptance
         stats = tree_map(lambda u, v: (i * u + v) / (i + 1), stats, next_stats)
 
         if delta_fn is not None:
             lr_ = (n_iter - i) * lr / n_iter
             delta = delta_fn(delta, target_alpha, window_avg_acceptance, lr_)
-        if update_theta:
-            theta_mean, theta_chol = theta_posterior_mean_and_chol(next_kalman_state.x, sigma_theta, SMOOTH_FREQ,
-                                                                   SIGMA_X)
-            next_theta = theta_mean + theta_chol @ jax.random.normal(key_theta, (3,))
-        else:
-            next_theta = theta
 
-        next_state = GibbsState(kalman_state=next_kalman_state, theta=next_theta)
         carry = i + 1, stats, next_state, delta, window_avg_acceptance, avg_acceptance
         if return_samples:
+            next_theta = next_state.theta
+            next_kalman_state = next_state.kalman_state
             every = N_STEPS // 4
             return carry, (next_kalman_state.x[::every], next_theta)
         return carry, None
