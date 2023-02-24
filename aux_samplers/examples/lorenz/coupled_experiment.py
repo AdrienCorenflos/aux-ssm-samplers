@@ -22,7 +22,7 @@ parser = argparse.ArgumentParser("Run a coupled Lorenz experiment")
 # General arguments
 parser.add_argument('--parallel', action='store_true')
 parser.add_argument('--no-parallel', dest='parallel', action='store_false')
-parser.set_defaults(parallel=True)
+parser.set_defaults(parallel=False)
 parser.add_argument('--debug', action='store_true')
 parser.add_argument('--no-debug', dest='debug', action='store_false')
 parser.set_defaults(debug=False)
@@ -31,7 +31,7 @@ parser.add_argument('--no-debug-nans', dest='debug_nans', action='store_false')
 parser.set_defaults(debug_nans=False)
 parser.add_argument('--gpu', action='store_true')
 parser.add_argument('--no-gpu', dest='gpu', action='store_false')
-parser.set_defaults(gpu=True)
+parser.set_defaults(gpu=False)
 parser.add_argument('--verbose', action='store_true')
 parser.add_argument('--no-verbose', dest='verbose', action='store_false')
 parser.set_defaults(verbose=False)
@@ -41,8 +41,8 @@ parser.add_argument("--precision", dest="precision", type=str, default="single")
 parser.add_argument("--burnin", dest="burnin", type=int, default=5_000)
 parser.add_argument("--decoupling", dest="decoupling", type=int, default=10)
 parser.add_argument("--n-estimators", dest="n_estimators", type=int, default=100)
-parser.add_argument("--K", dest="K", type=int, default=1)
-parser.add_argument("--M", dest="M", type=int, default=1_000)
+parser.add_argument("--K", dest="K", type=int, default=2_000)
+parser.add_argument("--M", dest="M", type=int, default=5_000)
 # We use the reflection as the covariances are the same for all the experiments.
 parser.add_argument("--coupling", dest="coupling", type=str, default="reflection")
 parser.add_argument("--lr", dest="lr", type=float, default=1.)
@@ -130,6 +130,7 @@ def gibbs_step(rng_key, state, delta):
     theta_mean, theta_chol = theta_posterior_mean_and_chol(next_kalman_state.x, sigma_theta, SMOOTH_FREQ, SIGMA_X)
     next_theta = theta_mean + theta_chol * jax.random.normal(key_theta, (3,))
     return GibbsState(kalman_state=next_kalman_state, theta=next_theta)
+
 
 def coupled_gibbs_step(rng_key, coupled_gibbs_state, delta):
     kalman_key, theta_key = jax.random.split(rng_key, 2)
@@ -285,7 +286,7 @@ def one_experiment(exp_key, verbose=args.verbose):
     adaptation_key, estimator_key = jax.random.split(exp_key, 2)
 
     delta, state = get_burnin_delta_and_state(adaptation_key, verbose)
-    estimator_keys = jax.random.split(estimator_key, args.n_experiments)
+    estimator_keys = jax.random.split(estimator_key, args.n_estimators)
 
     experiment_times = np.ones((args.n_estimators,)) * np.nan
     means = np.ones((args.n_estimators, N_STEPS, 3)) * np.nan
