@@ -25,18 +25,20 @@ def get_dynamics(theta, sigma_x, dt):
     return mean, Q
 
 
-
 def sample_trajectory(key, m0, P0, theta, sigma_x, dt, n_steps):
     mean, _ = get_dynamics(theta, sigma_x, dt)
+
     def body_fn(x, op_key):
         x = mean(x, None)
         x += sigma_x * jax.random.normal(op_key, x.shape) * jnp.sqrt(dt)
         return x, x
+
     init_key, key = jax.random.split(key)
     x0 = jax.random.multivariate_normal(init_key, mean=m0, cov=P0)
-    _, xs = jax.lax.scan(body_fn, x0, jax.random.split(key, n_steps-1))
+    _, xs = jax.lax.scan(body_fn, x0, jax.random.split(key, n_steps - 1))
     xs = jnp.insert(xs, 0, x0, axis=0)
     return xs
+
 
 def observations_model(data, sig_y, n_steps, sample_every):
     ys = data[:, 1:]

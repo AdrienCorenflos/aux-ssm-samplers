@@ -51,7 +51,6 @@ parser.add_argument("--beta", dest="beta", type=float, default=0.01)
 parser.add_argument("--delta-init", dest="delta_init", type=float, default=1e-5)
 parser.add_argument("--seed", dest="seed", type=int, default=42)
 
-
 args = parser.parse_args()
 
 # BACKEND CONFIG
@@ -239,7 +238,6 @@ def full_experiment():
     coupling_time_per_key = np.ones((args.n_experiments, args.n_estimators)) * np.nan
     for i in tqdm.trange(args.n_experiments,
                          desc=f"Style: T: {args.T}, D: {args.D}, gpu: {args.gpu}"):
-
         true_xs, experiment_times, means, squares, coupling_times = one_experiment(np_random_state, keys[i])
 
         time_per_key[i] = experiment_times
@@ -247,8 +245,6 @@ def full_experiment():
         mean_traj_per_key[i] = means
         square_traj_per_key[i] = squares
         coupling_time_per_key[i] = coupling_times
-
-
 
         # except Exception as e:  # noqa
         #     print(f"Experiment {i} failed for reason {e}")

@@ -93,4 +93,4 @@ def get_coupled_kernel(ys, Hs, Rs, cs, m0, P0, theta_1, theta_2, sigma_x, dt, pa
 
     dynamics_factories = (dynamics_factory_1, dynamics_factory_2)
     log_likelihood_fns = (log_likelihood_fn_1, log_likelihood_fn_2)
-    return get_generic_kernel(dynamics_factories, observations_factory, log_likelihood_fns, parallel)
+    return get_generic_kernel(dynamics_factories, observations_factory, log_likelihood_fns, parallel, coupled=True)

@@ -1,12 +1,13 @@
 """
 Implements the auxiliary Kalman sampling algorithm with custom proposal design.
 """
-from functools import partial
+
+from collections.abc import Sequence
 
 import jax
 from chex import dataclass, Array
 from jax import numpy as jnp
-from collections.abc import Sequence
+
 from .._primitives.base import SamplerState
 from .._primitives.kalman import filtering, LGSSM, sampling, posterior_logpdf, coupled_sampling
 from .._primitives.math.mvn import lindvall_roger

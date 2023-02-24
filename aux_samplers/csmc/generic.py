@@ -10,7 +10,7 @@ from jax import numpy as jnp
 from .._primitives.base import CoupledSamplerState
 from .._primitives.csmc import get_kernel as get_standard_kernel, get_coupled_kernel as get_standard_coupled_kernel
 from .._primitives.csmc.base import Distribution, UnivariatePotential, Dynamics, Potential, CSMCState
-from .._primitives.math.mvn.couplings import lindvall_roger, reflection
+from .._primitives.math.mvn.couplings import reflection
 
 
 def get_kernel(factory: Callable,

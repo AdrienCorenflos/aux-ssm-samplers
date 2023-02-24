@@ -15,7 +15,7 @@ from .._primitives.base import CoupledSamplerState
 from .._primitives.csmc.base import Distribution, UnivariatePotential, Dynamics, Potential, CSMCState, CoupledDynamics, \
     CoupledDistribution
 from .._primitives.csmc.pit import get_kernel as get_pit_kernel, get_coupled_kernel as get_coupled_pit_kernel
-from .._primitives.math.mvn.couplings import reflection_maximal, reflection, lindvall_roger
+from .._primitives.math.mvn.couplings import reflection_maximal, reflection
 
 
 def get_kernel(M0: Distribution, G0: UnivariatePotential, Mt: Dynamics, Gt: Potential, N: int,

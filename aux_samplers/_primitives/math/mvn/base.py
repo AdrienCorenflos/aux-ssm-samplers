@@ -7,10 +7,10 @@ from jax import numpy as jnp
 from jax.scipy.linalg import solve_triangular, eigh
 from jaxtyping import Float, Array
 
-
 # Avoid float saturation. JAX handling of INFs and NANs is not ideal.
 _MAX_LOGPDF = _INF = 1e500
 _MIN_LOGPDF = -_INF
+
 
 @partial(jnp.vectorize, signature="(n),(n),(n,n)->()")
 def logpdf(

@@ -241,7 +241,7 @@ def modified_lindvall_roger(key, m1, L1, m2, L2):
         y = m1 + L1 @ eps_y
     else:
         y = m1 + L1 * eps_y
-        
+
     log_v = jnp.log(jax.random.uniform(k3))
 
     def if_true():
@@ -256,14 +256,14 @@ def modified_lindvall_roger(key, m1, L1, m2, L2):
 
         flag_1 = log_u < l12 - l11
         flag_2 = log_u < l21 - l22
-            
+
         z_1 = jax.lax.select(flag_1, y, x_1)
         z_2 = jax.lax.select(flag_2, y, x_2)
         return z_1, z_2, flag_1 & flag_2
 
     def if_false():
         return x_1, x_2, False
-    
+
     if jnp.ndim(L2) == 2:
         ly2 = logpdf(y, m2, L2)
     else:
@@ -272,7 +272,7 @@ def modified_lindvall_roger(key, m1, L1, m2, L2):
         ly1 = logpdf(y, m1, L1)
     else:
         ly1 = norm_dist.logpdf(y, m1, L1).sum(-1)
-        
+
     cond = log_v < ly2 - ly1
     return jax.lax.cond(cond, if_true, if_false)
 
@@ -304,7 +304,6 @@ def reflection_maximal(key, N: int, m: Array, mu: Array, chol_Q: Union[Array, Nu
     jnp.ndarray
         The acceptance flags
     """
-    
 
     if jnp.ndim(chol_Q) == 2:
         z = solve_triangular(chol_Q, m - mu, lower=True)
@@ -334,7 +333,6 @@ def reflection_maximal(key, N: int, m: Array, mu: Array, chol_Q: Union[Array, Nu
     else:
         reflected_norm = jnp.where(do_accept[:, None], temp, norm - 2 * jnp.outer(jnp.dot(norm, e), e))
         m, mu = m[None, :], mu[None, :]
-
 
     if jnp.ndim(chol_Q) == 2:
         res_1 = m + norm @ chol_Q.T

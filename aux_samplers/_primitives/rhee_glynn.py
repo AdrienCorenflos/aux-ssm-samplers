@@ -1,18 +1,16 @@
 from functools import partial
-from typing import Callable
+from typing import Callable, Any
 
 import chex
 import jax
 import jax.numpy as jnp
 from jax.tree_util import tree_map
 
-from aux_samplers._primitives.base import CoupledSamplerState
-
 
 @partial(jax.jit, static_argnums=(1, 3, 4, 5, 6))
 def estimator(key,
-              coupled_kernel: Callable[[chex.PRNGKey, CoupledSamplerState], CoupledSamplerState],
-              coupled_state_init: CoupledSamplerState,
+              coupled_kernel: Callable[[chex.PRNGKey, Any], Any],
+              coupled_state_init: Any,
               k,
               m,
               test_fn,
@@ -38,7 +36,6 @@ def estimator(key,
     -------
 
     """
-
 
     if not 1 <= k <= m:
         raise ValueError("We must have 1 <= k <= m")
@@ -76,6 +73,7 @@ def estimator(key,
         coupled_t_p_1 = coupled_state_t_p_1.is_coupled | coupled_state_t.is_coupled
 
         jax.debug.print("coupled: {}", coupled_state_t_p_1.flags.mean())
+        jax.debug.print("theta_coupled: {}", coupled_state_t_p_1.theta_coupled)
         # accumulate the standard mcmc estimate
         first_cond = t_p_1 < m
 
