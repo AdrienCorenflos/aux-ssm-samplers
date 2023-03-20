@@ -12,7 +12,7 @@ except Exception as e:
 
 setuptools.setup(
     name="aux-ssm-samplers",
-    author="Adrien Corenflos",
+    author="REDACTED",
     description="Auxiliary samplers for state-space models with tractable densities",
     long_description=long_description,
     version="0.1",
@@ -31,7 +31,6 @@ setuptools.setup(
         "tensorflow_probability>=0.19.0",
         "tikzplotlib",
         "tqdm>=4.64.1",
-
     ],
     long_description_content_type="text/markdown",
     keywords="probabilistic state space bayesian statistics sampling algorithms",

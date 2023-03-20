@@ -1,7 +1,7 @@
 # Auxiliary Kalman and particle Gibbs samplers for generalised Feynman-Kac models
 
 This is the companion code for the paper [Auxiliary MCMC and particle Gibbs samplers for parallelisable
-inference in latent dynamical systems](https://arxiv.org/abs/2303.00301) by Adrien Corenflos and Simo Särkkä.
+inference in latent dynamical systems](redacted) by REDACTED.
 
 The models considered here are of the form
 
