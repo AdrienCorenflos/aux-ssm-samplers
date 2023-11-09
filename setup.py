@@ -23,7 +23,7 @@ setuptools.setup(
         "jaxlib>=0.3.25",
         "jaxopt>=0.5.5",
         "jaxtyping>=0.2.8",
-        "matplotlib>=3.6.3"
+        "matplotlib>=3.6.3",
         "numba>=0.56.4",
         "pandas",
         "pytest",
@@ -31,7 +31,6 @@ setuptools.setup(
         "tensorflow_probability>=0.19.0",
         "tikzplotlib",
         "tqdm>=4.64.1",
-
     ],
     long_description_content_type="text/markdown",
     keywords="probabilistic state space bayesian statistics sampling algorithms",
