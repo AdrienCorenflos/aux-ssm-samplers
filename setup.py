@@ -19,7 +19,6 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     install_requires=[
         "chex>=0.1.5",
-        "cupy-cuda12x>=13.3",
         "jax>=0.3.25",
         "jaxlib>=0.3.25",
         "jaxopt>=0.5.5",
