@@ -145,13 +145,13 @@ def _passthrough(tree_a, tree_b):
 @partial(jax.jit, static_argnums=(1, 2), donate_argnums=(0,))
 def _pad(elem, pow_2, T):
     dtype = elem.dtype
-    if jnp.issubdtype(dtype, jnp.integer):
-        constant_val = 0
-    else:
-        constant_val = jnp.nan
     pad_width = [(0, pow_2 - T)] + [(0, 0)] * (elem.ndim - 1)
-    return jnp.pad(elem, pad_width=pad_width, constant_values=constant_val)
 
+    if jnp.issubdtype(dtype, jnp.integer):
+        return jnp.pad(elem, pad_width=pad_width, constant_values=0)
+    elif jnp.issubdtype(dtype, jax.dtypes.prng_key):
+        return jnp.pad(elem, pad_width=pad_width, mode="edge") # whichever works, it won't be used
+    return jnp.pad(elem, pad_width=pad_width, constant_values=jnp.nan)
 
 @partial(jax.jit, static_argnums=(1, 2), donate_argnums=(0,))
 def _reshape(elem, intermediary_shape, original_shape):

@@ -28,7 +28,7 @@ parser = argparse.ArgumentParser("Run a Lorenz experiment")
 # General arguments
 parser.add_argument('--parallel', action='store_true')
 parser.add_argument('--no-parallel', dest='parallel', action='store_false')
-parser.set_defaults(parallel=False)
+parser.set_defaults(parallel=True)
 parser.add_argument('--debug', action='store_true')
 parser.add_argument('--no-debug', dest='debug', action='store_false')
 parser.set_defaults(debug=False)
@@ -37,7 +37,7 @@ parser.add_argument('--no-debug-nans', dest='debug_nans', action='store_false')
 parser.set_defaults(debug_nans=False)
 parser.add_argument('--gpu', action='store_true')
 parser.add_argument('--no-gpu', dest='gpu', action='store_false')
-parser.set_defaults(gpu=False)
+parser.set_defaults(gpu=True)
 parser.add_argument('--verbose', action='store_true')
 parser.add_argument('--no-verbose', dest='verbose', action='store_false')
 parser.set_defaults(verbose=True)
@@ -127,20 +127,20 @@ def loop(key, init_delta, init_state, delta_fn, n_iter, target_alpha=None, lr=No
                                      f"min_window_accept: {z[3]:.1%},  max_window_accept: {z[4]:.1%}, "
                                      f"min_accept: {z[5]:.1%}, max_accept: {z[6]:.1%}, "
                                      f"min_esjd: {z[7]:.2e}, max_esjd: {z[8]:.2e}, "
-                                     f"theta_0: {z[9]:.2f}, theta_1: {z[10]:.2f}, theta_2: {z[11]:.2f}",
+                                     f"θ_0: {z[9]:.2f}, θ_1: {z[10]:.2f}, θ_2: {z[11]:.2f}",
                                      end="")
 
     def body_fn(carry, key_inp):
-        from jax.experimental.host_callback import id_tap
+        from jax.debug import callback
         i, stats, state, delta, window_avg_acceptance, avg_acceptance = carry
         if verbose:
-            id_tap(print_func, (i,
+            callback(print_func, (i,
                                 jnp.min(delta), jnp.max(delta),
                                 jnp.min(window_avg_acceptance), jnp.max(window_avg_acceptance),
                                 jnp.min(avg_acceptance), jnp.max(avg_acceptance),
                                 jnp.min(stats[0]), jnp.max(stats[0]),
                                 state.theta[0], state.theta[1], state.theta[2]
-                                ), result=None)
+                                ), ordered=True)
         next_state = gibbs_step(key_inp, state, delta)
         next_stats = stats_fn(state.kalman_state.x, next_state.kalman_state.x)
 
@@ -206,17 +206,14 @@ def one_experiment(exp_key, verbose=args.verbose):
     #                                                                        verbose=verbose,
     #                                                                        update_theta=True)
 
-    from jax.experimental.host_callback import call
+    from jax.experimental import io_callback as call
 
     def tic_fn(arr):
         time_elapsed = time.time() - NOW
-        return np.array(time_elapsed, dtype=arr.dtype), arr
+        return np.array(time_elapsed, dtype=arr.dtype)
 
-    output_shape = (jax.ShapeDtypeStruct((), burnin_delta.dtype),
-                    jax.ShapeDtypeStruct(burnin_delta.shape, burnin_delta.dtype))
 
-    tic, burnin_delta = call(tic_fn, burnin_delta,
-                             result_shape=output_shape)
+    tic = call(tic_fn, jnp.sum(burnin_delta), jnp.sum(burnin_delta), ordered=True)
     (_, stats, _, out_delta, _, pct_accepted), (traj_samples, theta_samples) = loop(sample_key, burnin_delta,
                                                                                     burnin_state, None,
                                                                                     args.n_samples,
@@ -224,11 +221,7 @@ def one_experiment(exp_key, verbose=args.verbose):
                                                                                     update_theta=True,
                                                                                     return_samples=True)
 
-    output_shape = (jax.ShapeDtypeStruct((), pct_accepted.dtype),
-                    jax.ShapeDtypeStruct(pct_accepted.shape, pct_accepted.dtype))
-
-    toc, _ = call(tic_fn, pct_accepted,
-                  result_shape=output_shape)
+    toc = call(tic_fn, jnp.sum(pct_accepted), jnp.sum(pct_accepted), ordered=True)
     return toc - tic, stats, xs_init, pct_accepted, burnin_delta, traj_samples, theta_samples
 
 

@@ -47,10 +47,10 @@ parser.add_argument("--lr", dest="lr", type=float, default=0.1)
 parser.add_argument("--beta", dest="beta", type=float, default=0.01)
 parser.add_argument("--delta-init", dest="delta_init", type=float, default=1e-5)
 parser.add_argument("--seed", dest="seed", type=int, default=42)
-parser.add_argument("--style", dest="style", type=str, default="csmc-guided")
+parser.add_argument("--style", dest="style", type=str, default="csmc")
 parser.add_argument("--gradient", action='store_true')
 parser.add_argument('--no-gradient', dest='gradient', action='store_false')
-parser.set_defaults(gradient=True)
+parser.set_defaults(gradient=False)
 parser.add_argument("--backward", action='store_true')
 parser.add_argument('--no-backward', dest='backward', action='store_false')
 parser.set_defaults(backward=True)
@@ -96,15 +96,14 @@ def loop(key, init_delta, init_state, kernel_fn, delta_fn, n_iter, verbose=False
                                      f"min_esjd: {z[7]:.2e}, max_esjd: {z[8]:.2e}", end="")
 
     def body_fn(carry, key_inp):
-        from jax.experimental.host_callback import id_tap
         i, stats, state, delta, window_avg_acceptance, avg_acceptance = carry
         if verbose:
-            id_tap(print_func, (i,
-                                jnp.min(delta), jnp.max(delta),
-                                jnp.min(window_avg_acceptance), jnp.max(window_avg_acceptance),
-                                jnp.min(avg_acceptance), jnp.max(avg_acceptance),
-                                jnp.min(stats[0]), jnp.max(stats[0]),
-                                ), result=None)
+            jax.debug.callback(print_func, (i,
+                                            jnp.min(delta), jnp.max(delta),
+                                            jnp.min(window_avg_acceptance), jnp.max(window_avg_acceptance),
+                                            jnp.min(avg_acceptance), jnp.max(avg_acceptance),
+                                            jnp.min(stats[0]), jnp.max(stats[0]),
+                                            ), ordered=True)
 
         next_state = kernel_fn(key_inp, state, delta)
         next_stats = stats_fn(state.x, next_state.x)
@@ -160,26 +159,19 @@ def _one_experiment(ys, init_key, burnin_key, sample_key, verbose=args.verbose):
                                                                     args.burnin,
                                                                     verbose)
 
-    from jax.experimental.host_callback import call
+    from jax.experimental import io_callback as call
 
     # The return is needed by the host callback to ensure that the two tics are taken at the right moment.
-    def tic_fn(arr):
+    def tic_fn(inp_):
         time_elapsed = time.time() - NOW
-        return np.array(time_elapsed, dtype=arr.dtype), arr
+        return np.array(time_elapsed, dtype=inp_.dtype)
 
-    output_shape = (jax.ShapeDtypeStruct((), burnin_delta.dtype),
-                    jax.ShapeDtypeStruct(burnin_delta.shape, burnin_delta.dtype))
+    tic = call(tic_fn, burnin_delta.sum(), burnin_delta.sum(), ordered=True)
 
-    tic, burnin_delta = call(tic_fn, burnin_delta,
-                             result_shape=output_shape)
     _, stats, _, out_delta, _, pct_accepted = loop(sample_key, burnin_delta, burnin_state, kernel_fn, None,
                                                    args.n_samples, verbose)
 
-    output_shape = (jax.ShapeDtypeStruct((), pct_accepted.dtype),
-                    jax.ShapeDtypeStruct(pct_accepted.shape, pct_accepted.dtype))
-
-    toc, _ = call(tic_fn, pct_accepted,
-                  result_shape=output_shape)
+    toc = call(tic_fn, pct_accepted.sum(), pct_accepted.sum(), ordered=True)
 
     return toc - tic, stats, init_xs, ys, pct_accepted, burnin_delta
 
@@ -197,7 +189,7 @@ def one_experiment(random_state, exp_key, verbose=args.verbose):
 
 def full_experiment():
     np_random_state = np.random.RandomState(args.seed)
-    keys = jax.random.split(jax.random.PRNGKey(args.seed), args.n_experiments)
+    keys = jax.random.split(jax.random.key(args.seed), args.n_experiments)
 
     ejsd_per_key = np.ones((args.n_experiments, args.T, args.D ** 2)) * np.nan
     acceptance_rate_per_key = np.ones((args.n_experiments, args.T)) * np.nan

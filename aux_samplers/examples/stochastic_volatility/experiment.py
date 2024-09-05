@@ -96,15 +96,15 @@ def loop(key, init_delta, init_state, kernel_fn, delta_fn, n_iter, verbose=False
                                      f"min_esjd: {z[7]:.2e}, max_esjd: {z[8]:.2e}", end="")
 
     def body_fn(carry, key_inp):
-        from jax.experimental.host_callback import id_tap
+        from jax.debug import callback
         i, stats, state, delta, window_avg_acceptance, avg_acceptance = carry
         if verbose:
-            id_tap(print_func, (i,
+            callback(print_func, (i,
                                 jnp.min(delta), jnp.max(delta),
                                 jnp.min(window_avg_acceptance), jnp.max(window_avg_acceptance),
                                 jnp.min(avg_acceptance), jnp.max(avg_acceptance),
                                 jnp.min(jnp.sum(stats[0], -1)), jnp.max(jnp.sum(stats[0], -1)),
-                                ), result=None)
+                                ), ordered=True)
 
         next_state = kernel_fn(key_inp, state, delta)
         next_stats = stats_fn(state.x, next_state.x)
@@ -163,30 +163,23 @@ def one_experiment(exp_key, verbose=args.verbose):
                                                                       delta_adaptation,
                                                                       args.burnin,
                                                                       verbose)
-    from jax.experimental.host_callback import call
+    from jax.experimental import io_callback as call
 
     def tic_fn(arr):
         time_elapsed = time.time() - NOW
-        return np.array(time_elapsed, dtype=arr.dtype), arr
+        return np.array(time_elapsed, dtype=arr.dtype)
 
-    output_shape = (jax.ShapeDtypeStruct((), burnin_delta.dtype),
-                    jax.ShapeDtypeStruct(burnin_delta.shape, burnin_delta.dtype))
 
-    tic, burnin_delta = call(tic_fn, burnin_delta,
-                             result_shape=output_shape)
+    tic = call(tic_fn, jnp.sum(burnin_delta), jnp.sum(burnin_delta), ordered=True)
     _, stats, _, out_delta, _, pct_accepted = loop(sample_key, burnin_delta, burnin_state, kernel_fn, None,
                                                    args.n_samples, verbose)
 
-    output_shape = (jax.ShapeDtypeStruct((), pct_accepted.dtype),
-                    jax.ShapeDtypeStruct(pct_accepted.shape, pct_accepted.dtype))
-
-    toc, _ = call(tic_fn, pct_accepted,
-                  result_shape=output_shape)
+    toc = call(tic_fn, jnp.sum(pct_accepted), jnp.sum(pct_accepted), ordered=True)
     return toc - tic, stats, true_xs, xs_init, ys, pct_accepted, burnin_delta
 
 
 def full_experiment():
-    keys = jax.random.split(jax.random.PRNGKey(args.seed), args.n_experiments)
+    keys = jax.random.split(jax.random.key(args.seed), args.n_experiments)
 
     ejsd_per_key = np.ones((args.n_experiments, args.T, args.D)) * np.nan
     acceptance_rate_per_key = np.ones((args.n_experiments, args.T)) * np.nan

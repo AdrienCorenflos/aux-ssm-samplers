@@ -47,7 +47,7 @@ def test_vs_explicit(seed, T, dx, dy, parallel, nan_index):
         Hs[3, 0, :] = np.nan
 
     lgssm = LGSSM(m0, P0, Fs, Qs, bs, Hs, Rs, cs)
-    with jax.disable_jit():
+    with jax.disable_jit(False):
         ms, Ps, ell = filtering(ys, lgssm, parallel)
     expected_ms, expected_Ps, expected_ell = explicit_kalman_filter(ys, m0, P0, Hs, Rs, cs, Fs, Qs, bs)
     npt.assert_allclose(ms, expected_ms)

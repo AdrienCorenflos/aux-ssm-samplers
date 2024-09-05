@@ -1,1 +1,1 @@
-from .generic import get_kernel
+from .generic import get_kernel, LGSSM

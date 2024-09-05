@@ -112,7 +112,8 @@ def sequential_update(y, m, P, H, c, R):
         else:
             chol_S = jnp.linalg.cholesky(S)
             ell_inc = logpdf(y_, y_hat, chol_S)
-            chol_S = jnp.nan_to_num(chol_S, nan=_INF, posinf=_INF, neginf=-_INF)
+            finfo = jnp.finfo(chol_S.dtype)
+            chol_S = jnp.nan_to_num(chol_S, nan=finfo.max, posinf=finfo.max, neginf=finfo.min)
             G = cho_solve((chol_S, True), H_ @ P_).T
 
         m_ = m_ + G @ y_diff
@@ -216,7 +217,8 @@ def _filtering_init_one(F, Q, b, H, R, c, y, m, P):
         else:
             # This is needed as JAX doesn't allow us to delete rows/columns from a matrix
             chol_S_inf = jnp.linalg.cholesky(S)
-            chol_S_inf = jnp.where(jnp.isfinite(chol_S_inf), chol_S_inf, _INF)
+            finfo = jnp.finfo(chol_S_inf.dtype)
+            chol_S_inf = jnp.where(jnp.isfinite(chol_S_inf), chol_S_inf, finfo.max)
             S_invH_T = cho_solve((chol_S_inf, True), H_).T
 
         K = P_ @ S_invH_T
