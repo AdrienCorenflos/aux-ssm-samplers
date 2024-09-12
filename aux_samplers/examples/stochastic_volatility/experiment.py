@@ -31,7 +31,7 @@ parser.add_argument('--no-gpu', dest='gpu', action='store_false')
 parser.set_defaults(gpu=True)
 parser.add_argument('--verbose', action='store_true')
 parser.add_argument('--no-verbose', dest='verbose', action='store_false')
-parser.set_defaults(verbose=True)
+parser.set_defaults(verbose=False)
 parser.add_argument("--precision", dest="precision", type=str, default="single")
 
 # Experiment arguments
@@ -40,15 +40,15 @@ parser.add_argument("--T", dest="T", type=int, default=250)
 parser.add_argument("--D", dest="D", type=int, default=30)
 parser.add_argument("--n-samples", dest="n_samples", type=int, default=10_000)
 parser.add_argument("--burnin", dest="burnin", type=int, default=2_500)
-parser.add_argument("--target-alpha", dest="target_alpha", type=float, default=0.75)
+parser.add_argument("--target-alpha", dest="target_alpha", type=float, default=0.5)
 parser.add_argument("--lr", dest="lr", type=float, default=0.1)
 parser.add_argument("--beta", dest="beta", type=float, default=0.01)
 parser.add_argument("--delta-init", dest="delta_init", type=float, default=1e-8)
 parser.add_argument("--seed", dest="seed", type=int, default=1234)
-parser.add_argument("--style", dest="style", type=str, default="kalman-2")
+parser.add_argument("--style", dest="style", type=str, default="csmc")
 parser.add_argument("--gradient", action='store_true')
 parser.add_argument('--no-gradient', dest='gradient', action='store_false')
-parser.set_defaults(gradient=True)
+parser.set_defaults(gradient=False)
 parser.add_argument("--backward", action='store_true')
 parser.add_argument('--no-backward', dest='backward', action='store_false')
 parser.set_defaults(backward=True)
@@ -164,17 +164,21 @@ def one_experiment(exp_key, verbose=args.verbose):
                                                                       args.burnin,
                                                                       verbose)
     from jax.experimental import io_callback as call
+    from jax.debug import callback
 
     def tic_fn(arr):
         time_elapsed = time.time() - NOW
-        return np.array(time_elapsed, dtype=arr.dtype)
+        return arr, np.array(time_elapsed, dtype=arr.dtype)
 
 
-    tic = call(tic_fn, jnp.sum(burnin_delta), jnp.sum(burnin_delta), ordered=True)
+    burnin_delta, tic = call(tic_fn, (burnin_delta, jnp.sum(burnin_delta)), burnin_delta, ordered=False)
+    # callback(lambda z, *_:  print(time.time() - NOW), jnp.sum(burnin_delta), ordered=True)
+
     _, stats, _, out_delta, _, pct_accepted = loop(sample_key, burnin_delta, burnin_state, kernel_fn, None,
                                                    args.n_samples, verbose)
 
-    toc = call(tic_fn, jnp.sum(pct_accepted), jnp.sum(pct_accepted), ordered=True)
+    pct_accepted, toc = call(tic_fn, (pct_accepted, jnp.sum(pct_accepted)), pct_accepted , ordered=False)
+
     return toc - tic, stats, true_xs, xs_init, ys, pct_accepted, burnin_delta
 
 
@@ -234,6 +238,7 @@ def main():
     file_name = f"results/{args.style}-{args.D}-{args.T}-{args.N}-{args.parallel}-{args.gradient}.npz"
     if not os.path.isdir("results"):
         os.mkdir("results")
+    print(time_per_key)
     np.savez(file_name,
              ejsd_per_key=ejsd_per_key,
              acceptance_rate_per_key=acceptance_rate_per_key,

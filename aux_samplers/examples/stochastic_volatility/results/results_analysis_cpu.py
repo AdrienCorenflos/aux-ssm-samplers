@@ -10,8 +10,8 @@ GPU = False
 
 csmc_grad = np.load(f"csmc-{D}-{T}-25-{GPU}-True.npz")
 csmc = np.load(f"csmc-{D}-{T}-25-{GPU}-False.npz")
-kalman_1 = np.load(f"kalman-1-{D}-{T}-25-{GPU}-True.npz")
-kalman_2 = np.load(f"kalman-2-{D}-{T}-25-{GPU}-True.npz")
+kalman_1 = np.load(f"kalman-1-{D}-{T}-25-{GPU}-False.npz")
+kalman_2 = np.load(f"kalman-2-{D}-{T}-25-{GPU}-False.npz")
 csmc_guided_grad = np.load(f"csmc-guided-{D}-{T}-25-{GPU}-True.npz")
 csmc_guided = np.load(f"csmc-guided-{D}-{T}-25-{GPU}-False.npz")
 
@@ -66,12 +66,12 @@ kalman_2_time_per_iter = kalman_2_time[1:, None] / N_SAMPLES
 csmc_guided_time_per_iter = csmc_guided_time[1:, None] / N_SAMPLES
 csmc_guided_grad_time_per_iter = csmc_guided_grad_time[1:, None] / N_SAMPLES
 
-csmc_esjd = csmc_esjd[1:].sum(-1) ** 0.5
-csmc_grad_esjd = csmc_grad_esjd[1:].sum(-1) ** 0.5
-kalman_1_esjd = kalman_1_esjd[1:].sum(-1) ** 0.5
-kalman_2_esjd = kalman_2_esjd[1:].sum(-1) ** 0.5
-csmc_guided_esjd = csmc_guided_esjd[1:].sum(-1) ** 0.5
-csmc_guided_grad_esjd = csmc_guided_grad_esjd[1:].sum(-1) ** 0.5
+csmc_esjd = csmc_esjd[1:].sum(-1)
+csmc_grad_esjd = csmc_grad_esjd[1:].sum(-1)
+kalman_1_esjd = kalman_1_esjd[1:].sum(-1)
+kalman_2_esjd = kalman_2_esjd[1:].sum(-1)
+csmc_guided_esjd = csmc_guided_esjd[1:].sum(-1)
+csmc_guided_grad_esjd = csmc_guided_grad_esjd[1:].sum(-1)
 
 csmc_esjd_per_time = csmc_esjd / csmc_time_per_iter
 csmc_grad_esjd_per_time = csmc_grad_esjd / csmc_grad_time_per_iter

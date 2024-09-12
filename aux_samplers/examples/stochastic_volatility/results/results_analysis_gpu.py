@@ -10,7 +10,7 @@ GPU = True
 
 csmc_grad = np.load(f"csmc-{D}-{T}-25-{GPU}-True.npz")
 csmc = np.load(f"csmc-{D}-{T}-25-{GPU}-False.npz")
-kalman_1 = np.load(f"kalman-1-{D}-{T}-25-{GPU}-True.npz")
+kalman_1 = np.load(f"kalman-1-{D}-{T}-25-{GPU}-False.npz")
 kalman_2 = np.load(f"kalman-2-{D}-{T}-25-{GPU}-True.npz")
 
 csmc_grad_time = csmc_grad["time_per_key"]
@@ -50,10 +50,10 @@ csmc_grad_time_per_iter = csmc_grad_time[1:, None] / N_SAMPLES
 kalman_1_time_per_iter = kalman_1_time[1:, None] / N_SAMPLES
 kalman_2_time_per_iter = kalman_2_time[1:, None] / N_SAMPLES
 
-csmc_esjd = csmc_esjd[1:].sum(-1) ** 0.5
-csmc_grad_esjd = csmc_grad_esjd[1:].sum(-1) ** 0.5
-kalman_1_esjd = kalman_1_esjd[1:].sum(-1) ** 0.5
-kalman_2_esjd = kalman_2_esjd[1:].sum(-1) ** 0.5
+csmc_esjd = csmc_esjd[1:].sum(-1)
+csmc_grad_esjd = csmc_grad_esjd[1:].sum(-1)
+kalman_1_esjd = kalman_1_esjd[1:].sum(-1)
+kalman_2_esjd = kalman_2_esjd[1:].sum(-1)
 
 csmc_esjd_per_time = csmc_esjd / csmc_time_per_iter
 csmc_grad_esjd_per_time = csmc_grad_esjd / csmc_grad_time_per_iter

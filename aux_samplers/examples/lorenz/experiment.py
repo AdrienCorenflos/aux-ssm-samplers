@@ -210,10 +210,10 @@ def one_experiment(exp_key, verbose=args.verbose):
 
     def tic_fn(arr):
         time_elapsed = time.time() - NOW
-        return np.array(time_elapsed, dtype=arr.dtype)
+        return arr, np.array(time_elapsed, dtype=arr.dtype)
 
 
-    tic = call(tic_fn, jnp.sum(burnin_delta), jnp.sum(burnin_delta), ordered=True)
+    burnin_delta, tic = call(tic_fn, (burnin_delta, jnp.sum(burnin_delta)), burnin_delta, ordered=True)
     (_, stats, _, out_delta, _, pct_accepted), (traj_samples, theta_samples) = loop(sample_key, burnin_delta,
                                                                                     burnin_state, None,
                                                                                     args.n_samples,
@@ -221,7 +221,7 @@ def one_experiment(exp_key, verbose=args.verbose):
                                                                                     update_theta=True,
                                                                                     return_samples=True)
 
-    toc = call(tic_fn, jnp.sum(pct_accepted), jnp.sum(pct_accepted), ordered=True)
+    pct_accepted, toc = call(tic_fn, (pct_accepted, jnp.sum(pct_accepted)), pct_accepted, ordered=True)
     return toc - tic, stats, xs_init, pct_accepted, burnin_delta, traj_samples, theta_samples
 
 

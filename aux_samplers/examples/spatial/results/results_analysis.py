@@ -71,13 +71,19 @@ csmc_time_per_iter = csmc_time[1:, None] / N_SAMPLES
 csmc_grad_time_per_iter = csmc_grad_time[1:, None] / N_SAMPLES
 kalman_time_per_iter = kalman_time[1:, None] / N_SAMPLES
 
-csmc_esjd = csmc_esjd[1:].sum(-1) ** 0.5
-csmc_grad_esjd = csmc_grad_esjd[1:].sum(-1) ** 0.5
-kalman_esjd = kalman_esjd[1:].sum(-1) ** 0.5
+csmc_esjd = csmc_esjd[1:].sum(-1)
+csmc_grad_esjd = csmc_grad_esjd[1:].sum(-1)
+kalman_esjd = kalman_esjd[1:].sum(-1)
 
 csmc_esjd_per_time = csmc_esjd / csmc_time_per_iter
 csmc_grad_esjd_per_time = csmc_grad_esjd / csmc_grad_time_per_iter
 kalman_esjd_per_time = kalman_esjd / kalman_time_per_iter
+
+time_df = pd.DataFrame(columns=["cSMC", "cSMC_grad", "Kalman"])
+time_df["cSMC"] = csmc_time_per_iter.flatten()
+time_df["cSMC_grad"] = csmc_grad_time_per_iter.flatten()
+time_df["Kalman"] = kalman_time_per_iter.flatten()
+
 
 esjd_time_df = pd.DataFrame([np.arange(T),
                              csmc_esjd_per_time.mean(0),
@@ -92,3 +98,5 @@ esjd_df = pd.DataFrame([np.arange(T),
 
 esjd_df.to_csv("ESJD.csv")
 esjd_time_df.to_csv("ESJD_time.csv")
+time_df.to_csv("time.csv")
+
