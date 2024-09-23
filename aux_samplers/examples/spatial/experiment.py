@@ -20,7 +20,7 @@ parser = argparse.ArgumentParser("Run a Spatio-temporal experiment")
 # General arguments
 parser.add_argument('--parallel', action='store_true')
 parser.add_argument('--no-parallel', dest='parallel', action='store_false')
-parser.set_defaults(parallel=True)
+parser.set_defaults(parallel=False)
 parser.add_argument('--debug', action='store_true')
 parser.add_argument('--no-debug', dest='debug', action='store_false')
 parser.set_defaults(debug=False)
@@ -29,7 +29,7 @@ parser.add_argument('--no-debug-nans', dest='debug_nans', action='store_false')
 parser.set_defaults(debug_nans=False)
 parser.add_argument('--gpu', action='store_true')
 parser.add_argument('--no-gpu', dest='gpu', action='store_false')
-parser.set_defaults(gpu=True)
+parser.set_defaults(gpu=False)
 parser.add_argument('--verbose', action='store_true')
 parser.add_argument('--no-verbose', dest='verbose', action='store_false')
 parser.set_defaults(verbose=True)
@@ -47,7 +47,7 @@ parser.add_argument("--lr", dest="lr", type=float, default=0.1)
 parser.add_argument("--beta", dest="beta", type=float, default=0.01)
 parser.add_argument("--delta-init", dest="delta_init", type=float, default=1e-5)
 parser.add_argument("--seed", dest="seed", type=int, default=42)
-parser.add_argument("--style", dest="style", type=str, default="csmc")
+parser.add_argument("--style", dest="style", type=str, default="kalman")
 parser.add_argument("--gradient", action='store_true')
 parser.add_argument('--no-gradient', dest='gradient', action='store_false')
 parser.set_defaults(gradient=False)
@@ -162,6 +162,7 @@ def _one_experiment(ys, init_key, burnin_key, sample_key, verbose=args.verbose):
     from jax.experimental import io_callback as call
 
     # The return is needed by the host callback to ensure that the two tics are taken at the right moment.
+    # Otherwise JAX optimises the tic away.
     def tic_fn(inp_):
         time_elapsed = time.time() - NOW
         return inp_, np.array(time_elapsed, dtype=inp_.dtype)

@@ -1,13 +1,10 @@
-import jax
 import jax.numpy as jnp
-import numpy as np
 from jax.scipy.stats import norm
 
-from aux_samplers import mvn
 from aux_samplers.kalman import get_kernel as get_generic_kernel
 
 
-def get_kernel(y, rho, r2, T, parallel):
+def get_kernel(y, rho, r2, T, parallel, grad):
     m0 = jnp.zeros((1,))
     P0 = jnp.eye(1)
 
@@ -30,9 +27,9 @@ def get_kernel(y, rho, r2, T, parallel):
 
     def observations_factory(x, u, delta):
         grad_x = jnp.zeros((T, 1))
-
-        grad_x_m_1 = (x[-1] - y) / r2
-        grad_x = grad_x.at[-1].set(grad_x_m_1)
+        if grad:
+            grad_x_m_1 = (x[-1] - y) / r2
+            grad_x = grad_x.at[-1].set(grad_x_m_1)
         aux_ys = u + 0.5 * delta * grad_x
         return aux_ys, Hs, 0.5 * delta * Rs, cs
 

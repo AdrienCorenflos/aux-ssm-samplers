@@ -45,19 +45,19 @@ csmc_guided_delta = csmc_guided["delta_per_key"]
 csmc_guided_rate = csmc_guided["acceptance_rate_per_key"]
 csmc_guided_esjd = csmc_guided["ejsd_per_key"]
 
-plt.plot(csmc_guided_delta)
+plt.plot(kalman_2_esjd.mean(-1))
 plt.show()
 
 # Plot the EJSD
 plt.figure(figsize=(30, 15))
 
-print(csmc_guided_rate.mean(0))
-print(csmc_guided_grad_rate.mean(0))
-print(csmc_rate.mean(0))
-print(csmc_grad_rate.mean(0))
-print(kalman_1_rate.mean(0))
-print(kalman_2_rate.mean(0))
-print()
+# print(csmc_guided_rate.mean(0))
+# print(csmc_guided_grad_rate.mean(0))
+# print(csmc_rate.mean(0))
+# print(csmc_grad_rate.mean(0))
+# print(kalman_1_rate.mean(0))
+# print(kalman_2_rate.mean(0))
+# print()
 
 csmc_time_per_iter = csmc_time[1:, None] / N_SAMPLES
 csmc_grad_time_per_iter = csmc_grad_time[1:, None] / N_SAMPLES
@@ -97,6 +97,11 @@ esjd_df = pd.DataFrame([np.arange(T),
                         csmc_guided_esjd.mean(0),
                         csmc_guided_grad_esjd.mean(0)],
                        index=["t", "cSMC", "cSMC_grad", "Kalman_1", "Kalman_2", "cSMC_guided", "cSMC_guided_grad"]).T
+
+with pd.option_context('display.max_rows', 6, 'display.max_columns', None):
+    print(esjd_df.head())
+    print()
+    print(esjd_time_df.head())
 
 esjd_df.to_csv(f"ESJD_{GPU}.csv")
 esjd_time_df.to_csv(f"ESJD_time_{GPU}.csv")

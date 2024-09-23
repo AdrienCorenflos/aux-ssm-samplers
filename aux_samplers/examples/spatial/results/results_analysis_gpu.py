@@ -10,6 +10,8 @@ PLOT = True
 csmc_grad = np.load(f"csmc-{D}-{T}-25-True-True.npz")
 csmc = np.load(f"csmc-{D}-{T}-25-True-False.npz")
 kalman = np.load(f"kalman-{D}-{T}-25-True-True.npz")
+
+
 csmc_grad_mean = csmc_grad["mean_traj_per_key"]
 csmc_grad_std = csmc_grad["std_traj_per_key"]
 csmc_grad_true = csmc_grad["true_xs_per_key"]
@@ -33,6 +35,7 @@ kalman_time = kalman["time_per_key"]
 kalman_delta = kalman["delta_per_key"]
 kalman_rate = kalman["acceptance_rate_per_key"]
 kalman_esjd = kalman["ejsd_per_key"]
+
 
 # Plot some trajectories for visual inspection
 # ts = np.arange(T)
@@ -63,10 +66,10 @@ kalman_esjd = kalman["ejsd_per_key"]
 plt.figure(figsize=(30, 15))
 
 print(csmc_time.mean(), csmc_grad_time.mean(), kalman_time.mean())
-print(np.median(csmc_grad_esjd, 0), np.median(csmc_esjd, 0), np.mean(kalman_esjd, 0))
+print(np.median(csmc_grad_esjd), np.median(csmc_esjd), np.mean(kalman_esjd))
 
 # Plot the EJSD
-
+# toss the first one as it's got compilation time
 csmc_time_per_iter = csmc_time[1:, None] / N_SAMPLES
 csmc_grad_time_per_iter = csmc_grad_time[1:, None] / N_SAMPLES
 kalman_time_per_iter = kalman_time[1:, None] / N_SAMPLES
@@ -99,4 +102,7 @@ esjd_df = pd.DataFrame([np.arange(T),
 esjd_df.to_csv("ESJD.csv")
 esjd_time_df.to_csv("ESJD_time.csv")
 time_df.to_csv("time.csv")
+
+plt.plot(esjd_time_df.set_index("t"))
+plt.show()
 
